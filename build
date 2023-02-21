@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2046
+export $(sed 's/[[:blank:]]//g; /^#/d' .env.secrets | xargs)
+AMQP_URL="guest:$RABBIT_PASS@$DOMAIN_MOMO_SERVICE:5671"
+
+# zip
+cd "$PWD/grabber" || exit
+sed -i -- "s/AMQP_URL=".*"/AMQP_URL=\"$AMQP_URL\" \\\/" docker-start.sh && rm docker-start.sh--
+zip -r "$PWD/momo-service.zip" ./*
+sed -i -- "s/AMQP_URL=".*"/AMQP_URL=\"\" \\\/" docker-start.sh && rm docker-start.sh--
+
+# npm
+rm -r "$PWD/../dashboard/dist"
+cd "$PWD/../dashboard" || exit && npm i && npm run build
+
+cd "$PWD/.." || exit
+docker compose --env-file ./.env.secrets down --volumes --timeout 10
+docker compose --env-file ./.env.secrets up --build -d

@@ -1,0 +1,41 @@
+services:
+  rabbitMQ:
+    image: rabbitmq:3.9.27-management-alpine
+    environment:
+      #RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASS}
+    volumes:
+      - ./rabbitMQ/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+      - ./rabbitMQ/ssl:/etc/ssl
+    ports:
+      - 5671:5671
+      - 127.0.0.1:15671:15671
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+    restart: always
+  dashboard-api:
+    build:
+      context: .
+      dockerfile: ./dashboard-api/Dockerfile
+    depends_on:
+      - rabbitMQ
+    environment:
+      AMQP_URL: guest:${RABBIT_PASS}@rabbitMQ:5671
+      CA_CERT: ${CA_CERT}
+      CLIENT_CERT: ${CLIENT_CERT}
+      CLIENT_KEY: ${CLIENT_KEY}
+      DOMAIN: ${DOMAIN}
+      PASSWORD_DASHBOARD: ${PASSWORD_DASHBOARD}
+    volumes:
+      - ./dashboard/dist:/dist
+      - ./dashboard-api/ssl:/ssl
+      - ./grabber/momo-service.zip:/momo-service.zip
+    ports:
+      - 8844:8844
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+    restart: unless-stopped
