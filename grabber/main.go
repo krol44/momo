@@ -35,6 +35,9 @@ func main() {
 				if val.State != "running" {
 					continue
 				}
+				if len(val.Names) == 0 || hostname == "" {
+					continue
+				}
 				_, loaded := syncContainers.LoadOrStore(val.ID, "following")
 				if !loaded {
 					log.Info("Follow ", val.Names)
@@ -55,6 +58,9 @@ func main() {
 		for {
 			time.Sleep(time.Second * 5)
 			for _, val := range getContainers() {
+				if len(val.Names) == 0 || hostname == "" {
+					continue
+				}
 				val.Hostname = hostname
 				chanInfoCont <- val
 			}
@@ -135,6 +141,16 @@ func request(conn net.Conn, url string) *textproto.Reader {
 }
 
 func runObserver(container Container) {
+	if len(container.Names) == 0 || hostname == "" {
+		if _, loaded := syncContainers.LoadAndDelete(container.ID); loaded {
+			log.Info("Unfollow ", container.Names)
+		}
+
+		log.Error("no name container")
+
+		return
+	}
+
 	conn := connectDocker()
 	tp := request(conn,
 		fmt.Sprintf("/containers/"+container.ID+"/logs"+
@@ -155,13 +171,13 @@ func runObserver(container Container) {
 		}
 
 		var lineOut string
-		if toggle && len(line) >= 1 {
+		if toggle && len(line) >= 8 {
 			lineOut = line[8:]
 		} else {
 			lineOut = line
 		}
 
-		chanLogLines <- LogLine{container.ID, hostname, lineOut}
+		chanLogLines <- LogLine{container.ID, container.Names[0], hostname, lineOut}
 
 		if !toggle && strings.Contains(lineOut, "Server: ") {
 			toggle = true

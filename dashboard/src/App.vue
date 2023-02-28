@@ -24,53 +24,36 @@
               <a v-else href="#" @click="getInstallUrl">install grabber on the new machine</a>
             </div>
           </el-col>
-          <el-col :span="10">
-            <!--            <el-row>-->
-            <!--              <el-col :span="6">-->
-            <!--                <el-statistic title="Daily active users" :value="268500" />-->
-            <!--              </el-col>-->
-            <!--              <el-col :span="6">-->
-            <!--                <el-statistic :value="138">-->
-            <!--                  <template #title>-->
-            <!--                    <div style="display: inline-flex; align-items: center">-->
-            <!--                      Ratio of men to women-->
-            <!--                      <el-icon style="margin-left: 4px" :size="12">-->
-            <!--                        <Male />-->
-            <!--                      </el-icon>-->
-            <!--                    </div>-->
-            <!--                  </template>-->
-            <!--                  <template #suffix>/100</template>-->
-            <!--                </el-statistic>-->
-            <!--              </el-col>-->
-            <!--              <el-col :span="6">-->
-            <!--                <el-statistic title="Total Transactions" :value="172000" />-->
-            <!--              </el-col>-->
-            <!--              <el-col :span="6">-->
-            <!--                <el-statistic title="Feedback number" :value="562">-->
-            <!--                  <template #suffix>-->
-            <!--                    <el-icon style="vertical-align: -0.125em">-->
-            <!--                      <ChatLineRound />-->
-            <!--                    </el-icon>-->
-            <!--                  </template>-->
-            <!--                </el-statistic>-->
-            <!--              </el-col>-->
-            <!--            </el-row>-->
+          <el-col :span="7" style="display: flex; align-items: center; text-align: center;">
+            <div style="width: 150px;">
+              <div style="font-size: 12px;">
+                <a href="#" @click.prevent="openMQ">delivery/s RabbitMQ</a>
+              </div>
+              <div style="font-size: 13px; color: #409eff;">{{ deliverySec }}/s</div>
+            </div>
+            <div style="width: 150px;">
+              <div style="font-size: 12px;">
+                <a href="#" @click.prevent="openMQ">transactions rabbitMQ</a>
+              </div>
+              <div style="font-size: 13px; color: #409eff;">{{ transactionsRabbitMQ }}
+              </div>
+            </div>
           </el-col>
         </el-row>
       </el-header>
       <el-container>
         <el-aside width="250px" :style="{height: heightWindow-100+'px', 'overflow-y': 'scroll',
          'padding-bottom': '10px', 'padding-left': '10px'}">
-          <div v-if="Object.keys(containersMenu).length" v-for="(val, name) in containersMenu"
-               v-bind:key="name" style="white-space: nowrap;">
+          <div v-if="Object.keys(containersMenu).length" v-for="val in containersMenu"
+               v-bind:key="val.hostname" style="white-space: nowrap;">
             <el-divider content-position="left">
-              <el-switch v-model="this.switchMain[name]" @click="subContainers(val, name)" :active-text="name" />
+              <el-switch v-model="this.switchMain[val.hostname]" @click="subContainers(val.containers, val.hostname)" :active-text="val.hostname" />
             </el-divider>
-            <div style="margin-left: 10px;" v-for="cont in val" v-bind:key="cont.id">
-              <el-switch v-model="this.switch[cont.id]" size="small"
+            <div style="margin-left: 10px;" v-for="cont in val.containers" v-bind:key="cont.md5Name">
+              <el-switch v-model="this.switch[cont.md5Name]" size="small"
                          :active-text="cont.name" :disabled="!cont.running"
                          :active-color="cont.color.toHex()"
-                         @click="subContainer(cont.id)" />
+                         @click="subContainer(cont.md5Name)" />
               <sub style="position: relative; bottom: 7px;
                left: 2px; font-size: 10px;">{{ cont.running ? cont.status : 'not working' }}</sub>
             </div>
@@ -79,11 +62,15 @@
         </el-aside>
         <el-main>
 
-          <div :style="{height: heightWindow-100+'px', 'overflow-y': 'scroll'}" @scroll="scroll">
+          <div :style="{height: heightWindow-100+'px', 'overflow-y': 'scroll'}"
+               @wheel="scroll"
+               @click="this.stopChat=true">
             <div ref="logScroll">
               <div v-if="Object.keys(logsData).length" class="row" v-for="(val, index) in logsData" :key="index"
-                   :style="{'background-color':this.containers[val.data.container_id].color.alpha(0.2).toHex()}">
-                <div class="row-text">{{ val.timeCreate }} - {{ val.containerName }} - {{ val.data.log_line }}</div>
+                   :style="{'background-color':this.containers[val.data.md5_name].color.alpha(0.2).toHex()}">
+                <div class="row-text">{{ val.timeCreate }} |
+                  <strong>{{ val.data.hostname }}</strong>{{ val.data.name }} {{ val.data.log_line }}
+                </div>
               </div>
               <div v-else class="row" style="background-color: #f5f6fa;">
                 <div class="row-text" style="text-align: center;">no data</div>
@@ -106,6 +93,7 @@
 import { colord } from 'colord'
 import stc from 'string-to-color'
 import { ElMessage } from 'element-plus'
+import md5 from 'crypto-js/md5'
 
 export default {
 	data () {
@@ -114,20 +102,28 @@ export default {
 			pass: '',
 			ws: new WebSocket('ws' + (window.location.protocol !== 'http:' ? 's' : '') + '://'
 				+ window.location.hostname + ':8844/ws'),
-			containersMenu: {},
+			containersMenu: [],
 			logsData: [],
 			containers: {},
 			switch: {},
-			switchMain: [],
+			switchMain: {},
 			heightWindow: document.documentElement.clientHeight,
 			stopChat: false,
-			installUrl: ''
+			installUrl: '',
+			deliverySec: 0,
+			transactionsRabbitMQ: 0
 		}
 	},
 
 	methods: {
 		login: function () {
 			this.ws.send('pass-' + this.pass)
+		},
+		openMQ: function () {
+			let a = document.createElement('a')
+			a.target = '_blank'
+			a.href = 'https://' + window.location.hostname + ':15671'
+			a.click()
 		},
 		getInstallUrl: function () {
 			this.ws.send('get-install-url')
@@ -144,15 +140,20 @@ export default {
 			})
 		},
 		scrollDown: function () {
+			this.stopChat = false
 			this.$refs.logScroll.scrollIntoView({ behavior: 'smooth', block: 'end' })
 		},
-		scroll: function () {
-			let pos = this.$refs.logScroll.offsetHeight - this.heightWindow
-			if (pos - 300 > this.$refs.logScroll.parentElement.scrollTop) {
+		scroll: function (e) {
+			if (e.changedTouches) {
 				this.stopChat = true
 			}
-			if (pos - 100 < this.$refs.logScroll.parentElement.scrollTop) {
-				this.stopChat = false
+			if (e.wheelDelta >= 0) {
+				this.stopChat = true
+			} else {
+				let pos = this.$refs.logScroll.offsetHeight - this.heightWindow
+				if (pos - 25 < this.$refs.logScroll.parentElement.scrollTop) {
+					this.stopChat = false
+				}
 			}
 		},
 		resizeWindow: function () {
@@ -166,13 +167,11 @@ export default {
 				this.$refs.logScroll.scrollIntoView({ behavior: 'smooth', block: 'end' })
 			})
 		},
-		subContainer: function (contId) {
-			if (this.switch[contId]) {
-				console.log('sub-log-' + contId)
-				this.ws.send('sub-log-' + contId)
+		subContainer: function (md5Name) {
+			if (this.switch[md5Name]) {
+				this.ws.send('sub-log-' + md5Name)
 			} else {
-				console.log('unsub-log-' + contId)
-				this.ws.send('unsub-log-' + contId)
+				this.ws.send('unsub-log-' + md5Name)
 			}
 		},
 		subContainers: function (objs, mainName) {
@@ -181,14 +180,12 @@ export default {
 					continue
 				}
 
-				this.switch[val.id] = this.switchMain[mainName]
+				this.switch[val.md5Name] = this.switchMain[mainName]
 
 				if (this.switchMain[mainName]) {
-					console.log('sub-log-' + val.id)
-					this.ws.send('sub-log-' + val.id)
+					this.ws.send('sub-log-' + val.md5Name)
 				} else {
-					console.log('unsub-log-' + val.id)
-					this.ws.send('unsub-log-' + val.id)
+					this.ws.send('unsub-log-' + val.md5Name)
 				}
 			}
 		}
@@ -203,6 +200,8 @@ export default {
 	},
 
 	mounted () {
+		this.$refs.logScroll?.parentElement.addEventListener('touchmove', this.scroll)
+
 		this.$refs.login?.focus()
 
 		this.ws.onclose = () => {
@@ -251,32 +250,33 @@ export default {
 				let second = {
 					id: jp.data.Id,
 					name: nameContainer,
+					md5Name: md5(jp.data.Hostname + jp.data.Names[0]).toString(),
 					color: colord(stc(jp.data.Hostname + nameContainer)),
 					running: jp.data.State === 'running',
 					status: jp.data.Status
 				}
 
-				if (this.containersMenu[jp.data.Hostname]) {
-					let index = this.containersMenu[jp.data.Hostname].findIndex(key => key.id === jp.data.Id)
-					if (this.containersMenu[jp.data.Hostname][index]) {
-						this.containersMenu[jp.data.Hostname][index].running = second.running
+				let mainIndex = this.containersMenu.findIndex(key => key.hostname === jp.data.Hostname)
+				if (this.containersMenu[mainIndex]) {
+					let i = this.containersMenu[mainIndex]['containers'].findIndex(key => key.md5Name === jp.data.Md5Name)
+					if (this.containersMenu[mainIndex]['containers'][i]) {
+						this.containersMenu[mainIndex]['containers'][i] = second
 					} else {
-						this.containersMenu[jp.data.Hostname].push(second)
+						this.containersMenu[mainIndex]['containers'].push(second)
 					}
-					this.containersMenu[jp.data.Hostname].sort((a, b) => {
-						return a.name > b.name
-					})
+					this.containersMenu[mainIndex]['containers'].sort((a, b) => a.name > b.name)
+
 				} else {
-					this.containersMenu[jp.data.Hostname] = [second]
+					this.containersMenu.push({ hostname: jp.data.Hostname, containers: [second] })
 				}
 
-				this.containers[jp.data.Id] = second
-			}
+				this.containersMenu.sort((a, b) => a.hostname > b.hostname)
 
-			if (jp.type_mess === 'log') {
+				this.containers[jp.data.Md5Name] = second
+			}
+			if (jp.typeMess === 'log') {
 				this.logsData.push(
 					{
-						containerName: this.containers[jp.data.container_id].name,
 						timeCreate: new Date().toString().split(' ')[4],
 						data: jp.data,
 					}
@@ -288,6 +288,11 @@ export default {
 				}
 
 				this.logScrollDown()
+			}
+
+			if (jp.typeMess === 'statistic') {
+				this.transactionsRabbitMQ = jp.data.message_stats.deliver_get.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+				this.deliverySec = jp.data.message_stats.deliver_get_details.rate
 			}
 		}
 		this.ws.onerror = (evt) => {

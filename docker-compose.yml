@@ -9,7 +9,7 @@ services:
       - ./rabbitMQ/ssl:/etc/ssl
     ports:
       - 5671:5671
-      - 127.0.0.1:15671:15671
+      - 15671:15671
     logging:
       driver: "json-file"
       options:
@@ -27,7 +27,7 @@ services:
       CLIENT_CERT: ${CLIENT_CERT}
       CLIENT_KEY: ${CLIENT_KEY}
       DOMAIN: ${DOMAIN}
-      PASSWORD_DASHBOARD: ${PASSWORD_DASHBOARD}
+      DASHBOARD_PASS: ${DASHBOARD_PASS}
     volumes:
       - ./dashboard/dist:/dist
       - ./dashboard-api/ssl:/ssl

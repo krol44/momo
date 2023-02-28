@@ -1,5 +1,13 @@
-#!/usr/bin/env sh
-set -e
+#!/usr/bin/env bash
+
+rm ../ssl/*
+rm ../../grabber/ssl/*
+rm ../../dashboard-api/ssl/*
+
+# shellcheck disable=SC2046
+export $(sed 's/[[:blank:]]//g; /^#/d' ../../.env.secrets | xargs)
+
+sed -i -- "s/alt.dns/$DOMAIN/" script.sh && rm script.sh--
 
 docker build . -t gen-ssl
 
@@ -9,10 +17,14 @@ docker container cp gen-ssl:/ssl ../
 docker container rm -f gen-ssl
 docker rmi gen-ssl
 
-cp ../ssl/ca-cert.pem ../../grabber/ssl/ca-cert.pem
-cp ../ssl/client-cert.pem ../../grabber/ssl/client-cert.pem
-cp ../ssl/client-key.pem ../../grabber/ssl/client-key.pem
+sed -i -- "s/$DOMAIN/alt.dns/" script.sh && rm script.sh--
 
-cp ../ssl/ca-cert.pem ../../dashboard-api/ssl/ca-cert.pem
-cp ../ssl/client-cert.pem ../../dashboard-api/ssl/client-cert.pem
-cp ../ssl/client-key.pem ../../dashboard-api/ssl/client-key.pem
+chmod -R 777 ../ssl/
+
+cp ../ssl/ca-cert.pem ../../grabber/ssl/
+cp ../ssl/client-cert.pem ../../grabber/ssl/
+cp ../ssl/client-key.pem ../../grabber/ssl/
+
+cp ../ssl/ca-cert.pem ../../dashboard-api/ssl/
+cp ../ssl/client-cert.pem ../../dashboard-api/ssl/
+cp ../ssl/client-key.pem ../../dashboard-api/ssl/

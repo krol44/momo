@@ -2,13 +2,15 @@ package main
 
 type LogLine struct {
 	ContainerID string `json:"container_id"`
-	Name        string `json:"Name"`
+	Name        string `json:"name"`
 	Hostname    string `json:"hostname"`
+	Md5Name     string `json:"md5_name"`
 	LogLine     string `json:"log_line"`
 }
 
 type Container struct {
 	Hostname   string `json:"Hostname"`
+	Md5Name    string `json:"Md5Name"`
 	Command    string `json:"Command"`
 	Created    int    `json:"Created"`
 	HostConfig struct {
@@ -55,4 +57,13 @@ type Container struct {
 	} `json:"Ports"`
 	State  string `json:"State"`
 	Status string `json:"Status"`
+}
+
+type Statistic struct {
+	MessageStats struct {
+		DeliverGet        int `json:"deliver_get"`
+		DeliverGetDetails struct {
+			Rate float64 `json:"rate"`
+		} `json:"deliver_get_details"`
+	} `json:"message_stats"`
 }

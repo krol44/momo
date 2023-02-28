@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/md5"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -11,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/sirupsen/logrus"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -33,11 +35,12 @@ var upgrader = websocket.Upgrader{} // use default options
 
 func main() {
 	startTime = time.Now()
-	password = os.Getenv("PASSWORD_DASHBOARD")
+	password = os.Getenv("DASHBOARD_PASS")
 
 	logSetup()
 	genToken()
 	loadingContainers()
+	gettingStatistic()
 
 	go func() {
 		log.Info("start dashboard")
@@ -46,8 +49,8 @@ func main() {
 			if r.FormValue("token") == tokenInstall {
 				zip, _ := os.ReadFile("momo-service.zip")
 				bz := b64.StdEncoding.EncodeToString(zip)
-				_, err := fmt.Fprint(w, "#!/usr/bin/env sh\n"+
-					"cd /tmp || exit && base64 -d <<< "+bz+" -o momo-service.zip\n"+
+				_, err := fmt.Fprint(w, "#!/usr/bin/env bash\n"+
+					"cd /tmp || exit && base64 -d <<< "+bz+" > momo-service.zip\n"+
 					"unzip -o momo-service.zip -d momo-service\n"+
 					"cd momo-service || exit && sh docker-start.sh")
 				if err != nil {
@@ -116,17 +119,22 @@ func main() {
 	for mess := range messages {
 		var jsonMess LogLine
 		json.Unmarshal(mess.Body, &jsonMess)
-		containersSub.Range(func(ci, cs any) bool {
-			if jsonMess.ContainerID != ci {
+
+		jsonMess.Md5Name = fmt.Sprintf("%x",
+			md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
+
+		containersSub.Range(func(md5Name, cs any) bool {
+			if jsonMess.Md5Name != md5Name {
 				return true
 			}
 
 			strSendWS := struct {
-				TypeMess string  `json:"type_mess"`
+				TypeMess string  `json:"typeMess"`
 				Data     LogLine `json:"data"`
 			}{TypeMess: "log", Data: jsonMess}
 
-			containers.Load(strSendWS.Data.ContainerID)
+			strSendWS.Data.Md5Name = fmt.Sprintf("%x",
+				md5.Sum([]byte(strSendWS.Data.Hostname+strSendWS.Data.Name)))
 
 			for conn, sub := range cs.(map[*websocket.Conn]bool) {
 				if sub == false {
@@ -137,7 +145,7 @@ func main() {
 				if err != nil {
 					log.Info("close ws and delete from map")
 					delete(cs.(map[*websocket.Conn]bool), conn)
-					containersSub.Store(ci, cs)
+					containersSub.Store(md5Name, cs)
 					conn.Close()
 				}
 				wsMu.Unlock()
@@ -221,7 +229,7 @@ func ws(w http.ResponseWriter, r *http.Request) {
 				Data     string `json:"data"`
 			}{TypeMess: "install-url",
 				Data: "curl -sk https://" + os.Getenv("DOMAIN") + ":8844/install-momo.sh?token=" +
-					tokenInstall + " | sudo sh -"}
+					tokenInstall + " | sudo bash -"}
 
 			err := c.WriteJSON(strSendWS)
 			if err != nil {
@@ -244,23 +252,24 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		if strings.Contains(messStr, "sub-log-") {
-			contId := strings.TrimLeft(messStr, "sub-log-")
+			md5NameCont := strings.TrimPrefix(messStr, "sub-log-")
 			mp := make(map[*websocket.Conn]bool)
 			mp[c] = true
-			co, loaded := containersSub.LoadOrStore(contId, mp)
+			co, loaded := containersSub.LoadOrStore(md5NameCont, mp)
+
 			if loaded {
 				co.(map[*websocket.Conn]bool)[c] = true
-				containersSub.Store(contId, co)
+				containersSub.Store(md5NameCont, co)
 			}
 		}
 		if strings.Contains(messStr, "unsub-log-") {
-			contId := strings.TrimLeft(messStr, "unsub-log-")
+			md5NameCont := strings.TrimPrefix(messStr, "unsub-log-")
 			mp := make(map[*websocket.Conn]bool)
 			mp[c] = false
-			co, loaded := containersSub.LoadOrStore(contId, mp)
+			co, loaded := containersSub.LoadOrStore(md5NameCont, mp)
 			if loaded {
 				co.(map[*websocket.Conn]bool)[c] = false
-				containersSub.Store(contId, co)
+				containersSub.Store(md5NameCont, co)
 			}
 		}
 	}
@@ -309,7 +318,10 @@ func loadingContainers() {
 				continue
 			}
 
-			containers.Store(jsonContainer.Hostname+jsonContainer.Names[0], jsonContainer)
+			jsonContainer.Md5Name = fmt.Sprintf("%x",
+				md5.Sum([]byte(jsonContainer.Hostname+jsonContainer.Names[0])))
+
+			containers.Store(jsonContainer.Md5Name, jsonContainer)
 
 			wsClient.Range(func(conn, _ any) bool {
 				wsMu.Lock()
@@ -356,6 +368,45 @@ func connectRabbit() *amqp.Connection {
 	log.Info("connection to rabbit is successful")
 
 	return conn
+}
+
+func gettingStatistic() {
+	go func() {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		for {
+			url := "https://" + strings.Replace(os.Getenv("AMQP_URL"), ":5671", ":15671/api/overview", 1)
+
+			get, err := http.Get(url)
+			if err != nil {
+				log.Error(err)
+			}
+			body, _ := io.ReadAll(get.Body)
+			//Statistic
+			var js Statistic
+			errUn := json.Unmarshal(body, &js)
+			if errUn != nil {
+				log.Error(err)
+			}
+
+			wsClient.Range(func(conn, _ any) bool {
+				wsMu.Lock()
+				err := conn.(*websocket.Conn).WriteJSON(struct {
+					TypeMess string    `json:"typeMess"`
+					Data     Statistic `json:"data"`
+				}{TypeMess: "statistic", Data: js})
+				if err != nil {
+					log.Info("close ws and delete from map")
+					wsClient.Delete(conn)
+					conn.(*websocket.Conn).Close()
+				}
+				wsMu.Unlock()
+
+				return true
+			})
+
+			time.Sleep(time.Second)
+		}
+	}()
 }
 
 func logSetup() {

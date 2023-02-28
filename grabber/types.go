@@ -2,12 +2,13 @@ package main
 
 type LogLine struct {
 	ContainerID string `json:"container_id"`
+	Name        string `json:"name"`
 	Hostname    string `json:"hostname"`
 	LogLine     string `json:"log_line"`
 }
 
 type Container struct {
-	Hostname   string `json:"hostname"`
+	Hostname   string `json:"Hostname"`
 	Command    string `json:"Command"`
 	Created    int    `json:"Created"`
 	HostConfig struct {
