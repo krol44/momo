@@ -9,6 +9,7 @@ import (
 	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/sirupsen/logrus"
+	"go/types"
 	"net"
 	"net/textproto"
 	"os"
@@ -21,12 +22,12 @@ import (
 
 var syncContainers sync.Map
 var hostname = os.Getenv("HOSTNAME")
-var chanLogLines chan LogLine
+var chanLines chan Line
 var chanInfoCont chan Container
 
 func main() {
 	logSetup()
-	chanLogLines = make(chan LogLine)
+	chanLines = make(chan Line)
 	chanInfoCont = make(chan Container)
 
 	go func() {
@@ -38,13 +39,15 @@ func main() {
 				if len(val.Names) == 0 || hostname == "" {
 					continue
 				}
-				_, loaded := syncContainers.LoadOrStore(val.ID, "following")
+				_, loaded := syncContainers.LoadOrStore(val.ID, "follow")
 				if !loaded {
-					log.Info("Follow ", val.Names)
+					log.Info("Follow log and stats ", val.Names)
 
 					val.Hostname = hostname
 					chanInfoCont <- val
-					go runObserver(val)
+
+					go runObserverLogs(val)
+					go runObserverStats(val)
 				}
 			}
 
@@ -92,13 +95,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for val := range chanLogLines {
+	for val := range chanLines {
 		jsonLine, err := json.Marshal(val)
 		if err != nil {
 			log.Error(err)
 		}
 
-		if sendToRabbit(openChRab, "logs", string(jsonLine)) != nil {
+		typeCh := "logs"
+		if val.Type == "stats" {
+			typeCh = "stats"
+		}
+
+		if sendToRabbit(openChRab, typeCh, string(jsonLine)) != nil {
 			log.Error("sleep 10 sec / sendToRabbit / " + err.Error())
 			time.Sleep(10 * time.Second)
 		}
@@ -140,10 +148,10 @@ func request(conn net.Conn, url string) *textproto.Reader {
 	return textproto.NewReader(bufio.NewReader(conn))
 }
 
-func runObserver(container Container) {
+func runObserverLogs(container Container) {
 	if len(container.Names) == 0 || hostname == "" {
 		if _, loaded := syncContainers.LoadAndDelete(container.ID); loaded {
-			log.Info("Unfollow ", container.Names)
+			log.Info("Unfollow log ", container.Names)
 		}
 
 		log.Error("no name container")
@@ -164,7 +172,7 @@ func runObserver(container Container) {
 		if err != nil {
 			log.Info(err)
 			if _, loaded := syncContainers.LoadAndDelete(container.ID); loaded {
-				log.Info("Unfollow ", container.Names)
+				log.Info("Unfollow log ", container.Names)
 			}
 			conn.Close()
 			return
@@ -177,11 +185,60 @@ func runObserver(container Container) {
 			lineOut = line
 		}
 
-		chanLogLines <- LogLine{container.ID, container.Names[0], hostname, lineOut}
+		chanLines <- Line{container.ID, container.Names[0], hostname, "logs",
+			lineOut}
 
 		if !toggle && strings.Contains(lineOut, "Server: ") {
 			toggle = true
 		}
+	}
+}
+
+func runObserverStats(container Container) {
+	if len(container.Names) == 0 || hostname == "" {
+		if _, loaded := syncContainers.LoadAndDelete(container.ID); loaded {
+			log.Info("Unfollow stats ", container.Names)
+		}
+
+		log.Error("no name container")
+
+		return
+	}
+
+	conn := connectDocker()
+	tp := request(conn, "/containers/"+container.ID+"/stats")
+
+	for {
+		line, err := tp.ReadLine()
+		if err != nil {
+			log.Info(err)
+			if _, loaded := syncContainers.LoadAndDelete(container.ID); loaded {
+				log.Info("Unfollow stats ", container.Names)
+			}
+			conn.Close()
+			return
+		}
+
+		var j struct {
+			PidsStats struct {
+				Current int `json:"current"`
+			} `json:"pids_stats"`
+		}
+		err = json.Unmarshal([]byte(line), &j)
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		if j.PidsStats.Current == 0 {
+			err = types.Error{Msg: "no pid, unfollow stats"}
+		}
+		if err != nil {
+			log.Info(err)
+			return
+		}
+
+		chanLines <- Line{container.ID, container.Names[0], hostname, "stats",
+			line}
 	}
 }
 
@@ -217,7 +274,7 @@ func sendToRabbit(ch *amqp.Channel, channel string, body string) error {
 
 	q, err := ch.QueueDeclare(
 		channel,
-		false, // durable
+		true,  // durable
 		false, // delete when unused
 		false, // exclusive
 		false, // no-wait

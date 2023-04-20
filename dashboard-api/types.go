@@ -1,11 +1,14 @@
 package main
 
-type LogLine struct {
+import "database/sql"
+
+type Line struct {
 	ContainerID string `json:"container_id"`
 	Name        string `json:"name"`
 	Hostname    string `json:"hostname"`
 	Md5Name     string `json:"md5_name"`
-	LogLine     string `json:"log_line"`
+	Type        string `json:"type"`
+	Body        string `json:"body"`
 }
 
 type Container struct {
@@ -66,4 +69,23 @@ type Statistic struct {
 			Rate float64 `json:"rate"`
 		} `json:"deliver_get_details"`
 	} `json:"message_stats"`
+}
+
+type Alert struct {
+	ID           int            `db:"id" json:"id"`
+	ContainerMd5 string         `db:"container_md5" json:"container_md5"`
+	TelegramID   string         `db:"telegram_id" json:"telegram_id"`
+	TelegramName sql.NullString `db:"telegram_name" json:"telegram_name,omitempty"`
+	KeyAlert     string         `db:"key_alert" json:"key_alert"`
+	DateCreate   string         `db:"date_create" json:"date_create,omitempty"`
+}
+
+type PreparedAlert map[string][]struct {
+	Alert Alert
+	Data  Line
+}
+
+type TelegramChat struct {
+	TelegramName string `db:"telegram_name" json:"telegram_name"`
+	TelegramID   string `db:"telegram_id" json:"telegram_id"`
 }

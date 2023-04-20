@@ -1,10 +1,11 @@
 package main
 
-type LogLine struct {
+type Line struct {
 	ContainerID string `json:"container_id"`
 	Name        string `json:"name"`
 	Hostname    string `json:"hostname"`
-	LogLine     string `json:"log_line"`
+	Type        string `json:"type"`
+	Body        string `json:"Body"`
 }
 
 type Container struct {

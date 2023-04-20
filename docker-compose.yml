@@ -1,6 +1,6 @@
 services:
   rabbitMQ:
-    image: rabbitmq:3.9.27-management-alpine
+    image: rabbitmq:3.9.29-management-alpine
     environment:
       #RABBITMQ_DEFAULT_USER: "guest"
       RABBITMQ_DEFAULT_PASS: ${RABBIT_PASS}
@@ -28,7 +28,9 @@ services:
       CLIENT_KEY: ${CLIENT_KEY}
       DOMAIN: ${DOMAIN}
       DASHBOARD_PASS: ${DASHBOARD_PASS}
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN}
     volumes:
+      - ./sqlite:/sqlite
       - ./dashboard/dist:/dist
       - ./dashboard-api/ssl:/ssl
       - ./grabber/momo-service.zip:/momo-service.zip

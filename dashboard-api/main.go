@@ -5,19 +5,24 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	b64 "encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"github.com/jmoiron/sqlx"
+	"github.com/krol44/telegram-bot-api"
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"math/rand"
+	_ "modernc.org/sqlite"
 	"net/http"
 	"os"
 	"path"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,22 +35,40 @@ var containers sync.Map
 var startTime time.Time
 var password string
 var tokenInstall string
+var bot *tgbotapi.BotAPI
+var alertKeys sync.Map
+var alertChan chan Line
+var manyRequestMu sync.Mutex
+var manyRequest bool
 
-var upgrader = websocket.Upgrader{} // use default options
+var upgrader = websocket.Upgrader{}
 
 func main() {
+	initTables()
 	startTime = time.Now()
 	password = os.Getenv("DASHBOARD_PASS")
 
 	logSetup()
 	genToken()
-	loadingContainers()
 	gettingStatistic()
+	tgBot()
+	gettingAlerts()
+	alertChan = make(chan Line, 0)
 
+	// alert find
 	go func() {
+		for true {
+			f := findAlert()
+			go sendAlert(f)
+		}
+	}()
+
+	// dashboard
+	go func() {
+		mux := http.NewServeMux()
 		log.Info("start dashboard")
-		http.HandleFunc("/ws", ws)
-		http.HandleFunc("/install-momo.sh", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/ws", ws)
+		mux.HandleFunc("/install-momo.sh", func(w http.ResponseWriter, r *http.Request) {
 			if r.FormValue("token") == tokenInstall {
 				zip, _ := os.ReadFile("momo-service.zip")
 				bz := b64.StdEncoding.EncodeToString(zip)
@@ -64,26 +87,103 @@ func main() {
 			}
 		})
 
-		http.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir("dist"))))
+		mux.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir("dist"))))
+		for _, v := range []string{"/stats", "/alert", "/setting"} {
+			mux.HandleFunc(v, func(w http.ResponseWriter, r *http.Request) {
+				index, _ := os.ReadFile("dist/index.html")
+				w.Write(index)
+			})
+		}
 
 		if os.Getenv("DOMAIN") == "localhost" {
-			log.Fatal(http.ListenAndServe(":8844", nil))
+			log.Fatal(http.ListenAndServe(":8844", mux))
 		} else {
 			log.Fatal(http.ListenAndServeTLS(":8844",
-				os.Getenv("CLIENT_CERT"), os.Getenv("CLIENT_KEY"), nil))
+				os.Getenv("CLIENT_CERT"), os.Getenv("CLIENT_KEY"), mux))
 		}
 	}()
 
-	conn := connectRabbit()
+	go gettingContainers()
+	go gettingStats()
+	gettingLogs()
+}
 
+func gettingStats() {
+	conn := connectRabbit("stats")
 	go func() {
 		chClose := make(chan *amqp.Error)
 		conn.NotifyClose(chClose)
-		log.Println(<-chClose)
+		log.Info(<-chClose)
 		os.Exit(1)
 	}()
 
-	ch, err := connectRabbit().Channel()
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare(
+		"stats", // name
+		true,    // durable
+		false,   // delete when unused
+		false,   // exclusive
+		false,   // no-wait
+		nil,     // arguments
+	)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	messages, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	for mess := range messages {
+		var jsonMess Line
+		json.Unmarshal(mess.Body, &jsonMess)
+
+		jsonMess.Md5Name = fmt.Sprintf("%x",
+			md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
+
+		wsClient.Range(func(conn, _ any) bool {
+			wsMu.Lock()
+			err := conn.(*websocket.Conn).WriteJSON(struct {
+				TypeMess string `json:"typeMess"`
+				Data     Line   `json:"data"`
+			}{TypeMess: "stats", Data: jsonMess})
+			if err != nil {
+				wsClient.Delete(conn)
+				conn.(*websocket.Conn).Close()
+			}
+			wsMu.Unlock()
+
+			return true
+		})
+	}
+}
+
+func gettingLogs() {
+	conn := connectRabbit("logs")
+	go func() {
+		chClose := make(chan *amqp.Error)
+		conn.NotifyClose(chClose)
+		log.Info(<-chClose)
+		os.Exit(1)
+	}()
+
+	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -91,7 +191,7 @@ func main() {
 
 	q, err := ch.QueueDeclare(
 		"logs", // name
-		false,  // durable
+		true,   // durable
 		false,  // delete when unused
 		false,  // exclusive
 		false,  // no-wait
@@ -117,11 +217,13 @@ func main() {
 	}
 
 	for mess := range messages {
-		var jsonMess LogLine
+		var jsonMess Line
 		json.Unmarshal(mess.Body, &jsonMess)
 
 		jsonMess.Md5Name = fmt.Sprintf("%x",
 			md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
+
+		alertChan <- jsonMess
 
 		containersSub.Range(func(md5Name, cs any) bool {
 			if jsonMess.Md5Name != md5Name {
@@ -129,8 +231,8 @@ func main() {
 			}
 
 			strSendWS := struct {
-				TypeMess string  `json:"typeMess"`
-				Data     LogLine `json:"data"`
+				TypeMess string `json:"typeMess"`
+				Data     Line   `json:"data"`
 			}{TypeMess: "log", Data: jsonMess}
 
 			strSendWS.Data.Md5Name = fmt.Sprintf("%x",
@@ -143,7 +245,6 @@ func main() {
 				wsMu.Lock()
 				err := conn.WriteJSON(strSendWS)
 				if err != nil {
-					log.Info("close ws and delete from map")
 					delete(cs.(map[*websocket.Conn]bool), conn)
 					containersSub.Store(md5Name, cs)
 					conn.Close()
@@ -272,77 +373,150 @@ func ws(w http.ResponseWriter, r *http.Request) {
 				containersSub.Store(md5NameCont, co)
 			}
 		}
-	}
-}
 
-func loadingContainers() {
-	go func() {
-		ch, err := connectRabbit().Channel()
-		if err != nil {
-			log.Fatal(err)
+		if strings.Contains(messStr, "get-alerts") {
+			var tgc []TelegramChat
+			err := sqlite().Select(&tgc, `SELECT telegram_id, telegram_name FROM users`)
+			if err != nil {
+				log.Error(err)
+			}
+
+			var al []Alert
+			err = sqlite().
+				Select(&al, `SELECT a.id, a.container_md5, a.telegram_id, a.key_alert, a.date_create,
+       										u.telegram_name
+									FROM alerts a
+									LEFT JOIN users u on u.telegram_id = a.telegram_id`)
+			if err != nil {
+				log.Error(err)
+			}
+			sqlite().Close()
+
+			strSendWS := struct {
+				TypeMess        string         `json:"typeMess"`
+				Telegrams       []TelegramChat `json:"telegrams"`
+				TelegramBotName string         `json:"telegram_bot_name"`
+				Alerts          []Alert        `json:"alerts"`
+			}{TypeMess: "alerts", Telegrams: tgc, TelegramBotName: bot.Self.UserName, Alerts: al}
+
+			err = c.WriteJSON(strSendWS)
+			if err != nil {
+				log.Warn(err)
+			}
 		}
-		defer ch.Close()
-
-		q, err := ch.QueueDeclare(
-			"containers", // name
-			false,        // durable
-			false,        // delete when unused
-			false,        // exclusive
-			false,        // no-wait
-			nil,          // arguments
-		)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-
-		messages, err := ch.Consume(
-			q.Name, // queue
-			"",     // consumer
-			true,   // auto-ack
-			false,  // exclusive
-			false,  // no-local
-			false,  // no-wait
-			nil,    // args
-		)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-
-		for mess := range messages {
-			var jsonContainer Container
-			json.Unmarshal(mess.Body, &jsonContainer)
-
-			if len(jsonContainer.Names) == 0 {
+		if strings.Contains(messStr, "add-alert-") {
+			var j struct {
+				TelegramID string `json:"telegram_id"`
+				KeyAlert   string `json:"key_alert"`
+				Md5        string `json:"md5"`
+			}
+			err := json.Unmarshal([]byte(strings.TrimPrefix(messStr, "add-alert-")), &j)
+			if err != nil {
+				log.Error(j)
+				continue
+			}
+			if j.TelegramID == "" {
 				continue
 			}
 
-			jsonContainer.Md5Name = fmt.Sprintf("%x",
-				md5.Sum([]byte(jsonContainer.Hostname+jsonContainer.Names[0])))
+			var al Alert
+			err = sqlite().Get(&al, `SELECT id, container_md5, telegram_id, key_alert FROM alerts 
+			                                             WHERE container_md5 = ? AND telegram_id = ? AND key_alert = ?`,
+				j.Md5, j.TelegramID, j.KeyAlert)
+			if err != nil && sql.ErrNoRows != err {
+				log.Error(err)
+				continue
+			}
+			if al.ID != 0 {
+				continue
+			}
 
-			containers.Store(jsonContainer.Md5Name, jsonContainer)
+			sqlite().Query(`INSERT INTO alerts (container_md5, telegram_id, key_alert, date_create)
+									VALUES (?, ?, ?, datetime('now'))`, j.Md5, j.TelegramID, j.KeyAlert)
+			sqlite().Close()
+		}
+		if strings.Contains(messStr, "rm-alert-") {
+			sqlite().Query(`DELETE FROM alerts WHERE id = ?`, strings.TrimPrefix(messStr, "rm-alert-"))
+			sqlite().Close()
+		}
+	}
+}
 
-			wsClient.Range(func(conn, _ any) bool {
-				wsMu.Lock()
-				err := conn.(*websocket.Conn).WriteJSON(struct {
-					TypeMess string    `json:"typeMess"`
-					Data     Container `json:"data"`
-				}{TypeMess: "container", Data: jsonContainer})
-				if err != nil {
-					log.Info("close ws and delete from map")
-					wsClient.Delete(conn)
-					conn.(*websocket.Conn).Close()
-				}
-				wsMu.Unlock()
-
+func gettingContainers() {
+	go func() {
+		for {
+			time.Sleep(time.Second * 10)
+			containers.Range(func(key, _ any) bool {
+				containers.Delete(key)
 				return true
 			})
 		}
 	}()
+
+	ch, err := connectRabbit("containers").Channel()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare(
+		"containers", // name
+		true,         // durable
+		false,        // delete when unused
+		false,        // exclusive
+		false,        // no-wait
+		nil,          // arguments
+	)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	messages, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	for mess := range messages {
+		var jsonContainer Container
+		json.Unmarshal(mess.Body, &jsonContainer)
+
+		if len(jsonContainer.Names) == 0 {
+			continue
+		}
+
+		jsonContainer.Md5Name = fmt.Sprintf("%x",
+			md5.Sum([]byte(jsonContainer.Hostname+jsonContainer.Names[0])))
+
+		containers.Store(jsonContainer.Md5Name, jsonContainer)
+
+		wsClient.Range(func(conn, _ any) bool {
+			wsMu.Lock()
+			err := conn.(*websocket.Conn).WriteJSON(struct {
+				TypeMess string    `json:"typeMess"`
+				Data     Container `json:"data"`
+			}{TypeMess: "container", Data: jsonContainer})
+			if err != nil {
+				wsClient.Delete(conn)
+				conn.(*websocket.Conn).Close()
+			}
+			wsMu.Unlock()
+
+			return true
+		})
+	}
 }
 
-func connectRabbit() *amqp.Connection {
+func connectRabbit(typeCh string) *amqp.Connection {
 	cfg := new(tls.Config)
 
 	cfg.RootCAs = x509.NewCertPool()
@@ -365,7 +539,7 @@ func connectRabbit() *amqp.Connection {
 		log.Fatalln(err)
 	}
 
-	log.Info("connection to rabbit is successful")
+	log.Info("connection to rabbit is successful - " + typeCh)
 
 	return conn
 }
@@ -407,6 +581,197 @@ func gettingStatistic() {
 			time.Sleep(time.Second)
 		}
 	}()
+}
+
+func sqlite() *sqlx.DB {
+	conn, err := sqlx.Connect("sqlite", "sqlite/store.db")
+	if err != nil {
+		log.Error(err)
+	}
+	return conn
+}
+
+func initTables() {
+	db := sqlite()
+	defer db.Close()
+
+	if _, err := db.Exec(`
+create table if not exists users
+(
+  telegram_id   BIGINT,
+  telegram_name TEXT,
+  date_create   TEXT
+);
+
+create unique index if not exists users_telegram_id_uindex
+    on users (telegram_id);
+
+create table if not exists alerts
+(
+    id integer
+        constraint alerts_pk
+            primary key autoincrement,
+    container_md5       TEXT,
+    telegram_id     	TEXT,
+    key_alert 			TEXT,
+    date_create			TEXT
+);`); err != nil {
+		log.Error(err)
+	}
+}
+
+func tgBot() {
+	botApi, err := tgbotapi.NewBotAPI(os.Getenv("TG_BOT_TOKEN"))
+
+	if err != nil {
+		log.Panic(err)
+		os.Exit(1)
+	}
+	botApi.Debug = false
+
+	log.Infof("Authorized on account %s", botApi.Self.UserName)
+
+	bot = botApi
+
+	go func(botIn *tgbotapi.BotAPI) {
+		u := tgbotapi.NewUpdate(0)
+		u.Timeout = 60
+
+		for u := range botIn.GetUpdatesChan(u) {
+			if u.Message != nil {
+				if u.Message.Text == "/start" {
+					db := sqlite()
+					user := struct {
+						TelegramId int64 `db:"telegram_id"`
+					}{}
+					_ = db.Get(&user, "SELECT telegram_id FROM users WHERE telegram_id = ?",
+						u.Message.From.ID)
+
+					if user.TelegramId == 0 {
+						_, err := db.Exec(`INSERT INTO users (telegram_id, telegram_name, date_create)
+							VALUES (?, ?, datetime('now'))`, u.Message.From.ID, u.Message.From.UserName)
+						if err != nil {
+							log.Error(err)
+						}
+					}
+					db.Close()
+
+					botIn.Send(tgbotapi.NewSticker(u.Message.Chat.ID,
+						tgbotapi.FileID("CAACAgIAAxkBAAMHZDqdPa-ipjZbt5tFJ6g0rMNqc6gAAjEAAygPahTT_70FDNZySC8E")))
+				}
+			}
+		}
+	}(botApi)
+}
+
+func gettingAlerts() {
+	go func() {
+		db := sqlite()
+		defer db.Close()
+		for true {
+			var data []Alert
+			err := db.Select(&data, `SELECT id, container_md5, telegram_id, key_alert FROM alerts`)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for _, val := range data {
+				alertKeys.Store(val.ID, val)
+			}
+
+			alertKeys.Range(func(key, _ any) bool {
+				for _, val := range data {
+					if val.ID == key {
+						return true
+					}
+				}
+				alertKeys.Delete(key)
+				return true
+			})
+
+			time.Sleep(time.Second * 5)
+		}
+	}()
+}
+
+func findAlert() PreparedAlert {
+	ticker := time.NewTicker(time.Second * 2)
+	mapSend := make(PreparedAlert)
+
+	for v := range alertChan {
+		alertKeys.Range(func(_, k any) bool {
+			if v.Md5Name != k.(Alert).ContainerMd5 {
+				return true
+			}
+			if strings.Contains(strings.ToLower(v.Body), strings.ToLower(k.(Alert).KeyAlert)) {
+				alertData := k.(Alert)
+				mapSend[v.Md5Name+alertData.KeyAlert] = append(mapSend[v.Md5Name+alertData.KeyAlert],
+					struct {
+						Alert Alert
+						Data  Line
+					}{alertData, v})
+			}
+			return true
+		})
+
+		select {
+		case <-ticker.C:
+			return mapSend
+		default:
+			for _, v := range mapSend {
+				if len(v) >= 20 {
+					return mapSend
+				}
+			}
+			continue
+		}
+	}
+
+	return mapSend
+}
+
+func sendAlert(a PreparedAlert) {
+	if manyRequest {
+		log.Error("too many messages are sending in tg")
+		return
+	}
+	for _, v := range a {
+		var (
+			info string
+			lg   string
+		)
+		cl := map[string]bool{}
+		for _, l := range v {
+			lg += l.Data.Body + "\n"
+			info = "<b>Key alert:</b> " + l.Alert.KeyAlert + " — " + l.Data.Hostname + " <b>" + l.Data.Name + "</b>\n\n"
+			cl[l.Alert.TelegramID] = true
+		}
+
+		for c := range cl {
+			ci, _ := strconv.Atoi(c)
+			if ci == 0 {
+				continue
+			}
+			mess := tgbotapi.NewMessage(int64(ci), info+lg)
+			mess.DisableWebPagePreview = true
+			mess.ParseMode = tgbotapi.ModeHTML
+			_, err := bot.Send(mess)
+			if err != nil {
+				log.Warn(err)
+				if strings.Contains(err.Error(), "Too Many Requests") {
+					go func() {
+						manyRequestMu.Lock()
+						manyRequest = true
+						manyRequestMu.Unlock()
+						time.Sleep(time.Minute * 10)
+						manyRequestMu.Lock()
+						manyRequest = false
+						manyRequestMu.Unlock()
+					}()
+				}
+			}
+		}
+	}
 }
 
 func logSetup() {

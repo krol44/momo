@@ -6,5 +6,18 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-badge.css'
 import './assets/main.css'
+import VueApexCharts from 'vue3-apexcharts'
 
-createApp(app).use(router).use(elementPlus).mount('#app')
+import { createStore } from 'vuex'
+
+const store = createStore({
+	state () {
+		return {
+			isAuth: false
+		}
+	}
+})
+
+store.state.isAuth = window.localStorage.getItem('is-auth') === 'yes'
+
+createApp(app).use(router).use(store).use(elementPlus).use(VueApexCharts).mount('#app')
