@@ -29,7 +29,7 @@ export default {
 		}
 	},
 	mounted () {
-		window.ws.send('get-install-url')
+		window.ws.send('install-url')
 		window.ws.addEventListener('message', (evt) => {
 			let jp = JSON.parse(evt.data)
 

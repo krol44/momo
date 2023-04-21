@@ -23,9 +23,9 @@ services:
       - rabbitMQ
     environment:
       AMQP_URL: guest:${RABBIT_PASS}@rabbitMQ:5671
-      CA_CERT: ${CA_CERT}
-      CLIENT_CERT: ${CLIENT_CERT}
-      CLIENT_KEY: ${CLIENT_KEY}
+      CA_CERT: '/ssl/ca-cert.pem'
+      CLIENT_CERT: '/ssl/client-cert.pem'
+      CLIENT_KEY: '/ssl/client-key.pem'
       DOMAIN: ${DOMAIN}
       DASHBOARD_PASS: ${DASHBOARD_PASS}
       TG_BOT_TOKEN: ${TG_BOT_TOKEN}

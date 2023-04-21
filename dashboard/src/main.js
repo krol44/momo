@@ -13,11 +13,10 @@ import { createStore } from 'vuex'
 const store = createStore({
 	state () {
 		return {
-			isAuth: false
+			containersMenu: [],
+			containersColor: {}
 		}
 	}
 })
-
-store.state.isAuth = window.localStorage.getItem('is-auth') === 'yes'
 
 createApp(app).use(router).use(store).use(elementPlus).use(VueApexCharts).mount('#app')

@@ -28,8 +28,9 @@ const handleSelect = (key) => {
              :ellipsis="false"
              :default-active="activeIndex"
              @select="handleSelect">
-      <el-menu-item index="logo" class="revert" disabled><img title="Mo Mo" src="/logo.png" style="width: 50px;
-       margin-top: 4px;" alt="Mo Mo"></el-menu-item>
+      <el-menu-item index="logo" class="revert" disabled>
+        <a title="MoMo" href="/"><img title="Mo Mo" src="/logo.png" style="width: 50px; margin-top: 4px;" alt="Mo Mo"></a>
+      </el-menu-item>
       <el-menu-item index="/">Realtime logs</el-menu-item>
       <el-menu-item index="/stats">Stats</el-menu-item>
       <el-menu-item index="/alert">Alert list</el-menu-item>
@@ -39,7 +40,8 @@ const handleSelect = (key) => {
         <apexchart type="line" height="56" width="250"
                    :options="chartOptions"
                    :series="series" />
-      </el-menu-item> <el-menu-item index="/statmq" class="hover-disable">
+      </el-menu-item>
+      <el-menu-item index="/statmq" class="hover-disable">
         <div class="statmq">
           <div>Delivery/s RabbitMQ</div>
           <div style="color: #409eff;">{{ deliverySec }}/s</div>
@@ -62,16 +64,20 @@ const handleSelect = (key) => {
 <script>
 import { ElMessage } from 'element-plus'
 import _ from 'lodash'
+import md5 from 'crypto-js/md5'
+import { colord } from 'colord'
+import stc from 'string-to-color'
 
 export default {
 	data () {
 		return {
-			isAuth: this.$store.state.isAuth,
+			isAuth: window.localStorage.getItem('is-auth') === 'yes',
 			pass: '',
 			ws: new WebSocket('ws' + (window.location.protocol !== 'http:' ? 's' : '') + '://'
 				+ window.location.hostname + ':8844/ws'),
 			deliverySec: 0,
 			transactionsRabbitMQ: 0,
+			containersMenu: [],
 			series: [{ data: [{ x: new Date().getTime(), y: 0 }] }],
 			chartOptions: {
 				chart: {
@@ -215,6 +221,15 @@ export default {
 	methods: {
 		login: function () {
 			this.ws.send('pass-' + this.pass)
+		},
+		purifyMenu () {
+			for (let i in this.containersMenu) {
+				_.remove(this.containersMenu[i].containers, (v) => {
+					if ((new Date).getTime() - v.lastUpdate > 10000) {
+						return true
+					}
+				})
+			}
 		}
 	},
 	mounted () {
@@ -261,14 +276,55 @@ export default {
 				this.deliverySec = jp.data.message_stats.deliver_get_details.rate
 
 				this.series[0].data.push({ x: new Date().getTime(), y: this.deliverySec })
-        if (this.series[0].data.length > 1000) {
-	        this.series[0].data = this.series[0].data.slice(500)
-        }
+				if (this.series[0].data.length > 1000) {
+					this.series[0].data = this.series[0].data.slice(500)
+				}
+			}
+
+			if (jp.typeMess === 'container') {
+				let nameContainer = jp.data.Names[0].slice(1)
+
+				let second = {
+					id: jp.data.Id,
+					name: nameContainer,
+					md5Name: md5(jp.data.Hostname + jp.data.Names[0]).toString(),
+					color: colord(stc(jp.data.Hostname + nameContainer)),
+					running: jp.data.State === 'running',
+					status: jp.data.Status,
+					lastUpdate: (new Date).getTime()
+				}
+
+				this.$store.state.containersColor[second.md5Name] = second.color
+
+				let mainIndex = this.containersMenu.findIndex(key => key.hostname === jp.data.Hostname)
+				if (this.containersMenu[mainIndex]) {
+					let i = this.containersMenu[mainIndex]['containers'].findIndex(key => key.md5Name === jp.data.Md5Name)
+					if (this.containersMenu[mainIndex]['containers'][i]) {
+						this.containersMenu[mainIndex]['containers'][i] = second
+					} else {
+						this.containersMenu[mainIndex]['containers'].push(second)
+					}
+					this.containersMenu[mainIndex]['containers'].sort((a, b) => a.name > b.name)
+
+				} else {
+					this.containersMenu.push({ hostname: jp.data.Hostname, containers: [second] })
+				}
+				this.containersMenu.sort((a, b) => a.hostname > b.hostname)
+
+				this.$store.state.containersMenu = this.containersMenu
 			}
 		}
 		this.ws.onerror = (evt) => {
 			console.log(evt.data)
 		}
+
+		setTimeout(() => {
+			window.ws.send('containers')
+    }, 100)
+		setInterval(() => {
+			window.ws.send('containers')
+			this.purifyMenu()
+		}, 2000)
 	}
 }
 </script>

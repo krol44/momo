@@ -5,7 +5,7 @@ import { Check, Close } from '@element-plus/icons-vue'
   <el-container>
     <el-aside width="250px" :style="{height: heightWindow-85+'px', 'overflow-y': 'scroll',
          'padding-bottom': '10px', 'padding-left': '10px'}">
-      <div v-if="Object.keys(containersMenu).length" v-for="val in containersMenu"
+      <div v-if="Object.keys($store.state.containersMenu).length" v-for="val in $store.state.containersMenu"
            v-bind:key="val.hostname" style="white-space: nowrap;">
         <el-divider content-position="left">
           <el-switch v-model="switchMain[val.hostname]" @click="subContainers(val.containers, val.hostname)"
@@ -17,8 +17,6 @@ import { Check, Close } from '@element-plus/icons-vue'
                      :active-text="cont.name" :disabled="!cont.running"
                      :active-color="cont.color.toHex()"
                      @click="subContainer(cont.md5Name)" />
-          <sub style="position: relative; bottom: 7px;
-               left: 2px; font-size: 10px;">{{ cont.running ? cont.status : 'not working' }}</sub>
         </div>
       </div>
       <el-skeleton v-else animated :rows="7" style="padding-top: 20px;" />
@@ -56,8 +54,8 @@ import { Check, Close } from '@element-plus/icons-vue'
            @click="stopChat=true">
         <div ref="logScroll">
           <div v-if="Object.keys(logsData).length" class="row" v-for="(val, index) in logsData" :key="index"
-               :style="{'background-color':containers[val.data.md5_name]
-                ? containers[val.data.md5_name].color.alpha(0.2).toHex() : ''}">
+               :style="{'background-color':$store.state.containersColor[val.data.md5_name]
+                ? $store.state.containersColor[val.data.md5_name].alpha(0.15).toHex() : ''}">
             <div class="row-text">{{ val.timeCreate }} | <strong>{{ val.data.hostname }}</strong>
               <line v-html="val.data.name"></line>
               <line v-html="val.data.body"></line>
@@ -78,9 +76,6 @@ import { Check, Close } from '@element-plus/icons-vue'
 </template>
 
 <script>
-import { colord } from 'colord'
-import stc from 'string-to-color'
-import md5 from 'crypto-js/md5'
 import _ from 'lodash'
 
 export default {
@@ -90,10 +85,8 @@ export default {
 			filter = 'panic|fatal|error|warning'
 		}
 		return {
-			containersMenu: [],
-			containersAlive: new Map(),
 			logsData: [],
-			containers: {},
+			containersColor: {},
 			switchData: {},
 			switchMain: {},
 			heightWindow: document.documentElement.clientHeight,
@@ -176,19 +169,6 @@ export default {
 			}
 			window.localStorage.setItem('subs-log', JSON.stringify(subs))
 		},
-		purifyMenu () {
-			for (let cont of this.containersAlive) {
-				if ((new Date).getTime() - this.containersAlive.get(cont[0]) > 10000) {
-					document.getElementById(cont[0]).style.display = 'none'
-					this.containersAlive.delete(cont[0])
-				} else {
-					let el = document.getElementById(cont[0])
-					if (el) {
-						el.style.display = 'block'
-					}
-				}
-			}
-		},
 		restoreSubs () {
 			if (!this.restoredSubs) {
 				this.restoredSubs = true
@@ -200,6 +180,7 @@ export default {
 		}
 	},
 	created () {
+		this.restoreSubs()
 		window.addEventListener('resize', this.resizeWindow)
 	},
 	unmounted () {
@@ -211,7 +192,7 @@ export default {
 
 		this.$refs.login?.focus()
 
-		window.addEventListener('focus', (event) => {
+		window.addEventListener('focus', () => {
 			if (this.stopChat === false) {
 				this.$refs.logScroll?.scrollIntoView({ block: 'end' })
 			}
@@ -220,42 +201,6 @@ export default {
 		window.ws.addEventListener('message', (evt) => {
 			let jp = JSON.parse(evt.data)
 
-			if (jp.typeMess === 'container') {
-				let nameContainer = jp.data.Names[0].slice(1)
-
-				let second = {
-					id: jp.data.Id,
-					name: nameContainer,
-					md5Name: md5(jp.data.Hostname + jp.data.Names[0]).toString(),
-					color: colord(stc(jp.data.Hostname + nameContainer)),
-					running: jp.data.State === 'running',
-					status: jp.data.Status
-				}
-
-				let mainIndex = this.containersMenu.findIndex(key => key.hostname === jp.data.Hostname)
-				if (this.containersMenu[mainIndex]) {
-					this.containersAlive.set(second.md5Name, (new Date).getTime())
-
-					let i = this.containersMenu[mainIndex]['containers'].findIndex(key => key.md5Name === jp.data.Md5Name)
-					if (this.containersMenu[mainIndex]['containers'][i]) {
-						this.containersMenu[mainIndex]['containers'][i] = second
-					} else {
-						this.containersMenu[mainIndex]['containers'].push(second)
-					}
-					this.containersMenu[mainIndex]['containers'].sort((a, b) => a.name > b.name)
-
-				} else {
-					this.containersMenu.push({ hostname: jp.data.Hostname, containers: [second] })
-				}
-
-				this.containersMenu.sort((a, b) => a.hostname > b.hostname)
-
-				this.containers[jp.data.Md5Name] = second
-
-				this.purifyMenu()
-
-				this.restoreSubs()
-			}
 			if (jp.typeMess === 'log') {
 				jp.data.body = _.escape(jp.data.body)
 
@@ -303,12 +248,6 @@ export default {
 				this.logScrollDown()
 			}
 		})
-
-		setTimeout(() => {
-			if (this.$store.state.isAuth) {
-				window.ws.send('get-containers')
-			}
-		}, 100)
 	}
 }
 </script>

@@ -16,6 +16,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"math"
 	"math/rand"
 	_ "modernc.org/sqlite"
 	"net/http"
@@ -28,10 +29,11 @@ import (
 	"time"
 )
 
-var wsClient sync.Map
-var wsMu sync.Mutex
+var wsClients sync.Map
+var wsSend chan WSMess
 var containersSub sync.Map
 var containers sync.Map
+var containerStats map[string]StatsReady
 var startTime time.Time
 var password string
 var tokenInstall string
@@ -53,6 +55,7 @@ func main() {
 	gettingStatistic()
 	tgBot()
 	gettingAlerts()
+	wsSend = make(chan WSMess, 0)
 	alertChan = make(chan Line, 0)
 
 	// alert find
@@ -103,6 +106,31 @@ func main() {
 		}
 	}()
 
+	// send ws
+	go func() {
+		for m := range wsSend {
+			err := m.Conn.WriteJSON(m.Struct)
+			if err != nil {
+				containersSub.Range(func(md5Name, cs any) bool {
+					for conn := range cs.(map[*websocket.Conn]bool) {
+						if conn == m.Conn {
+							log.Debug("close ws and delete from map containersSub")
+							delete(cs.(map[*websocket.Conn]bool), conn)
+							containersSub.Store(md5Name, cs)
+							conn.Close()
+						}
+					}
+					return true
+				})
+
+				wsClients.Delete(m.Conn)
+				m.Conn.Close()
+
+				log.Debug("close ws and delete from map wsClients")
+			}
+		}
+	}()
+
 	go gettingContainers()
 	go gettingStats()
 	gettingLogs()
@@ -150,27 +178,39 @@ func gettingStats() {
 		return
 	}
 
+	containerStats = make(map[string]StatsReady)
+
 	for mess := range messages {
 		var jsonMess Line
 		json.Unmarshal(mess.Body, &jsonMess)
 
-		jsonMess.Md5Name = fmt.Sprintf("%x",
-			md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
+		jsonMess.Md5Name = fmt.Sprintf("%x", md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
 
-		wsClient.Range(func(conn, _ any) bool {
-			wsMu.Lock()
-			err := conn.(*websocket.Conn).WriteJSON(struct {
-				TypeMess string `json:"typeMess"`
-				Data     Line   `json:"data"`
-			}{TypeMess: "stats", Data: jsonMess})
-			if err != nil {
-				wsClient.Delete(conn)
-				conn.(*websocket.Conn).Close()
-			}
-			wsMu.Unlock()
+		var j StatsContainer
+		err := json.Unmarshal([]byte(jsonMess.Body), &j)
+		if err != nil {
+			log.Warn(err)
+			continue
+		}
 
-			return true
-		})
+		stats := StatsReady{}
+
+		stats.Cpu = math.Round((float64(j.CPUStats.CPUUsage.TotalUsage-j.PrecpuStats.CPUUsage.TotalUsage)/
+			float64(j.CPUStats.SystemCPUUsage-j.PrecpuStats.SystemCPUUsage)*
+			float64(j.CPUStats.OnlineCpus)*100)*100) / 100
+
+		stats.Mem = math.Round((float64(j.MemoryStats.Usage-j.MemoryStats.Stats.InactiveFile)/1024/1024)*100) / 100
+		stats.MemMax = math.Round((float64(j.MemoryStats.Limit)/1024/1024)*100) / 100
+
+		stats.NetI = math.Round((float64(j.Networks.Eth0.RxBytes)/1000/1000)*100) / 100
+		stats.NetO = math.Round((float64(j.Networks.Eth0.TxBytes)/1000/1000)*100) / 100
+
+		if len(j.BlkioStats.IoServiceBytesRecursive) >= 2 {
+			stats.Dr = math.Round((float64(j.BlkioStats.IoServiceBytesRecursive[0].Value)/1000/1000)*100) / 100
+			stats.Dw = math.Round((float64(j.BlkioStats.IoServiceBytesRecursive[1].Value)/1000/1000)*100) / 100
+		}
+
+		containerStats[jsonMess.Md5Name] = stats
 	}
 }
 
@@ -230,26 +270,22 @@ func gettingLogs() {
 				return true
 			}
 
-			strSendWS := struct {
+			str := struct {
 				TypeMess string `json:"typeMess"`
 				Data     Line   `json:"data"`
 			}{TypeMess: "log", Data: jsonMess}
 
-			strSendWS.Data.Md5Name = fmt.Sprintf("%x",
-				md5.Sum([]byte(strSendWS.Data.Hostname+strSendWS.Data.Name)))
+			str.Data.Md5Name = fmt.Sprintf("%x",
+				md5.Sum([]byte(str.Data.Hostname+str.Data.Name)))
 
 			for conn, sub := range cs.(map[*websocket.Conn]bool) {
 				if sub == false {
 					continue
 				}
-				wsMu.Lock()
-				err := conn.WriteJSON(strSendWS)
-				if err != nil {
-					delete(cs.(map[*websocket.Conn]bool), conn)
-					containersSub.Store(md5Name, cs)
-					conn.Close()
+				wsSend <- WSMess{
+					Conn:   conn,
+					Struct: str,
 				}
-				wsMu.Unlock()
 			}
 			return true
 		})
@@ -280,8 +316,10 @@ func ws(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, message, err := c.ReadMessage()
 		messStr := string(message)
+		log.Debug(messStr)
+
 		if err != nil {
-			log.Warn("read:", err)
+			log.Debug("read:", err)
 			break
 		}
 		if strings.Contains(messStr, "pass-") {
@@ -299,14 +337,13 @@ func ws(w http.ResponseWriter, r *http.Request) {
 				str.Data = "fail"
 			}
 
-			err := c.WriteJSON(str)
-			if err != nil {
-				log.Error(err)
+			wsSend <- WSMess{
+				Conn:   c,
+				Struct: str,
 			}
+
 			continue
 		}
-
-		log.Println(messStr)
 
 		cookie, err := r.Cookie("token")
 		if err != nil || fmt.Sprintf("%x", sha256.Sum256([]byte(password+startTime.String()))) != cookie.Value {
@@ -318,40 +355,47 @@ func ws(w http.ResponseWriter, r *http.Request) {
 				log.Error(err)
 			}
 
-			wsClient.Delete(c)
+			wsClients.Delete(c)
 			continue
 		} else {
-			wsClient.Store(c, "")
+			wsClients.Store(c, true)
 		}
 
-		if messStr == "get-install-url" {
-			strSendWS := struct {
-				TypeMess string `json:"typeMess"`
-				Data     string `json:"data"`
-			}{TypeMess: "install-url",
-				Data: "curl -sk https://" + os.Getenv("DOMAIN") + ":8844/install-momo.sh?token=" +
-					tokenInstall + " | sudo bash -"}
-
-			err := c.WriteJSON(strSendWS)
-			if err != nil {
-				log.Warn(err)
+		if messStr == "install-url" {
+			wsSend <- WSMess{
+				Conn: c,
+				Struct: struct {
+					TypeMess string `json:"typeMess"`
+					Data     string `json:"data"`
+				}{TypeMess: "install-url",
+					Data: "curl -sk https://" + os.Getenv("DOMAIN") + ":8844/install-momo.sh?token=" +
+						tokenInstall + " | sudo bash -"},
 			}
 		}
 
-		if messStr == "get-containers" {
+		if messStr == "containers" {
 			containers.Range(func(_, val any) bool {
-				strSendWS := struct {
-					TypeMess string    `json:"typeMess"`
-					Data     Container `json:"data"`
-				}{TypeMess: "container", Data: val.(Container)}
-
-				err := c.WriteJSON(strSendWS)
-				if err != nil {
-					log.Warn(err)
+				wsSend <- WSMess{
+					Conn: c,
+					Struct: struct {
+						TypeMess string    `json:"typeMess"`
+						Data     Container `json:"data"`
+					}{TypeMess: "container", Data: val.(Container)},
 				}
 				return true
 			})
 		}
+
+		if messStr == "stats" {
+			wsSend <- WSMess{
+				Conn: c,
+				Struct: struct {
+					TypeMess string                `json:"typeMess"`
+					Data     map[string]StatsReady `json:"data"`
+				}{TypeMess: "stats", Data: containerStats},
+			}
+		}
+
 		if strings.Contains(messStr, "sub-log-") {
 			md5NameCont := strings.TrimPrefix(messStr, "sub-log-")
 			mp := make(map[*websocket.Conn]bool)
@@ -374,7 +418,7 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if strings.Contains(messStr, "get-alerts") {
+		if strings.Contains(messStr, "alerts") {
 			var tgc []TelegramChat
 			err := sqlite().Select(&tgc, `SELECT telegram_id, telegram_name FROM users`)
 			if err != nil {
@@ -392,25 +436,23 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			}
 			sqlite().Close()
 
-			strSendWS := struct {
-				TypeMess        string         `json:"typeMess"`
-				Telegrams       []TelegramChat `json:"telegrams"`
-				TelegramBotName string         `json:"telegram_bot_name"`
-				Alerts          []Alert        `json:"alerts"`
-			}{TypeMess: "alerts", Telegrams: tgc, TelegramBotName: bot.Self.UserName, Alerts: al}
-
-			err = c.WriteJSON(strSendWS)
-			if err != nil {
-				log.Warn(err)
+			wsSend <- WSMess{
+				Conn: c,
+				Struct: struct {
+					TypeMess        string         `json:"typeMess"`
+					Telegrams       []TelegramChat `json:"telegrams"`
+					TelegramBotName string         `json:"telegram_bot_name"`
+					Alerts          []Alert        `json:"alerts"`
+				}{TypeMess: "alerts", Telegrams: tgc, TelegramBotName: bot.Self.UserName, Alerts: al},
 			}
 		}
-		if strings.Contains(messStr, "add-alert-") {
+		if strings.Contains(messStr, "alert-add-") {
 			var j struct {
 				TelegramID string `json:"telegram_id"`
 				KeyAlert   string `json:"key_alert"`
 				Md5        string `json:"md5"`
 			}
-			err := json.Unmarshal([]byte(strings.TrimPrefix(messStr, "add-alert-")), &j)
+			err := json.Unmarshal([]byte(strings.TrimPrefix(messStr, "alert-add-")), &j)
 			if err != nil {
 				log.Error(j)
 				continue
@@ -435,8 +477,8 @@ func ws(w http.ResponseWriter, r *http.Request) {
 									VALUES (?, ?, ?, datetime('now'))`, j.Md5, j.TelegramID, j.KeyAlert)
 			sqlite().Close()
 		}
-		if strings.Contains(messStr, "rm-alert-") {
-			sqlite().Query(`DELETE FROM alerts WHERE id = ?`, strings.TrimPrefix(messStr, "rm-alert-"))
+		if strings.Contains(messStr, "alert-rm-") {
+			sqlite().Query(`DELETE FROM alerts WHERE id = ?`, strings.TrimPrefix(messStr, "alert-rm-"))
 			sqlite().Close()
 		}
 	}
@@ -498,21 +540,6 @@ func gettingContainers() {
 			md5.Sum([]byte(jsonContainer.Hostname+jsonContainer.Names[0])))
 
 		containers.Store(jsonContainer.Md5Name, jsonContainer)
-
-		wsClient.Range(func(conn, _ any) bool {
-			wsMu.Lock()
-			err := conn.(*websocket.Conn).WriteJSON(struct {
-				TypeMess string    `json:"typeMess"`
-				Data     Container `json:"data"`
-			}{TypeMess: "container", Data: jsonContainer})
-			if err != nil {
-				wsClient.Delete(conn)
-				conn.(*websocket.Conn).Close()
-			}
-			wsMu.Unlock()
-
-			return true
-		})
 	}
 }
 
@@ -562,19 +589,14 @@ func gettingStatistic() {
 				log.Error(err)
 			}
 
-			wsClient.Range(func(conn, _ any) bool {
-				wsMu.Lock()
-				err := conn.(*websocket.Conn).WriteJSON(struct {
-					TypeMess string    `json:"typeMess"`
-					Data     Statistic `json:"data"`
-				}{TypeMess: "statistic", Data: js})
-				if err != nil {
-					log.Info("close ws and delete from map")
-					wsClient.Delete(conn)
-					conn.(*websocket.Conn).Close()
+			wsClients.Range(func(conn, _ any) bool {
+				wsSend <- WSMess{
+					Conn: conn.(*websocket.Conn),
+					Struct: struct {
+						TypeMess string    `json:"typeMess"`
+						Data     Statistic `json:"data"`
+					}{TypeMess: "statistic", Data: js},
 				}
-				wsMu.Unlock()
-
 				return true
 			})
 
@@ -629,7 +651,7 @@ func tgBot() {
 	}
 	botApi.Debug = false
 
-	log.Infof("Authorized on account %s", botApi.Self.UserName)
+	log.Infof("authorized on account %s", botApi.Self.UserName)
 
 	bot = botApi
 
@@ -788,5 +810,10 @@ func logSetup() {
 		log.SetOutput(os.Stdout)
 	}
 	log.SetOutput(os.Stdout)
-	log.SetLevel(log.InfoLevel)
+
+	if os.Getenv("DOMAIN") == "localhost" {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
 }

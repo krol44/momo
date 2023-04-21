@@ -1,6 +1,6 @@
 <template>
-  <div style="max-width: 900px; margin-left: 20px;">
-    <el-alert v-if="telegramBotName" type="info" :closable="false">
+  <div style="margin: 0 20px 20px 20px;">
+    <el-alert type="info" :closable="false">
       Join to the <a target="_blank"
                      :href="'https://t.me/'+telegramBotName"
     >https://t.me/{{ telegramBotName }}</a> telegram bot and press to start, after update this page
@@ -9,23 +9,24 @@
         <template #prepend>set default templates keys</template>
       </el-input>
     </el-alert>
-    <el-table :data="containers" style="max-width: 900px; margin-left: 20px;" class="table-alert">
+    <el-table :data="containers" style="width: 900px; margin: 20px 0 0 20px;
+              padding-bottom: 200px;" class="table-alert">
       <el-table-column type="index" width="50" />
       <el-table-column prop="hostname" label="Host" width="180" />
       <el-table-column prop="name" label="Name" width="180" />
       <el-table-column label="Key alerts" #default="scope">
       <span v-for="tag in alerts">
         <el-tag class="mx-1" style="margin: 0 5px 5px 0;"
-                v-if="tag.container_md5 === scope.row.md5"
+                v-if="tag.container_md5 === scope.row.md5Name"
                 :key="tag.id"
                 :disable-transitions="true"
                 @close="rmAlert(tag.id)" closable>
           [@{{ tag.telegram_name.String ? tag.telegram_name.String : tag.telegram_id }}] {{ tag.key_alert }}</el-tag>
       </span>
         <el-divider style="margin: 5px 0;" />
-        <el-input v-model="inputs[scope.row.md5]" placeholder="key alert string" size="small">
+        <el-input v-model="inputs[scope.row.md5Name]" placeholder="key alert string" size="small">
           <template #prepend>
-            <el-select v-model="selects[scope.row.md5]"
+            <el-select v-model="selects[scope.row.md5Name]"
                        :default-first-option="true" size="small" style="width: 110px;" placeholder="select chat">
               <el-option
                       v-for="item in telegrams"
@@ -36,8 +37,8 @@
             </el-select>
           </template>
         </el-input>
-        <el-button size="small" @click="addCustonAlerts(scope.row.md5)">add default templates</el-button>
-        <el-button type="primary" size="small" @click="addCustumAlert(scope.row.md5)">add custom from input</el-button>
+        <el-button size="small" @click="addCustonAlerts(scope.row.md5Name)">add default templates</el-button>
+        <el-button type="primary" size="small" @click="addCustumAlert(scope.row.md5Name)">add custom from input</el-button>
       </el-table-column>
     </el-table>
   </div>
@@ -45,14 +46,10 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import md5 from 'crypto-js/md5'
-import { colord } from 'colord'
-import stc from 'string-to-color'
 
 export default {
 	data () {
 		return {
-			containersMenu: [],
 			containers: [],
 			select: null,
 			inputs: {},
@@ -60,11 +57,15 @@ export default {
 			telegrams: [],
 			alerts: [],
 			telegramBotName: '',
-			defaultKeys: 'level=error**level=fatal**level=panic'
+			defaultKeys: 'level=error**level=fatal**level=panic',
+			interval: setInterval
 		}
 	},
 	watch: {
 		defaultKeys: function (val) {
+			if (window.localStorage.getItem('default-keys') === val) {
+				return
+			}
 			window.localStorage.setItem('default-keys', val)
 			ElMessage({
 				showClose: false,
@@ -75,16 +76,16 @@ export default {
 			})
 		},
 	},
-  created () {
+	created () {
 		let d = window.localStorage.getItem('default-keys')
-	  if (!!d) {
-	    this.defaultKeys = d
-    }
-  },
+		if (!!d) {
+			this.defaultKeys = d
+		}
+	},
 	methods: {
 		rmAlert: function (id) {
-			window.ws.send('rm-alert-' + id)
-			window.ws.send('get-alerts')
+			window.ws.send('alert-rm-' + id)
+			window.ws.send('alerts')
 		},
 		addCustumAlert: function (md5) {
 			let s = this.inputs[md5]
@@ -111,8 +112,8 @@ export default {
 				return
 			}
 
-			window.ws.send('add-alert-' + JSON.stringify({ telegram_id: i, key_alert: s, md5: md5 }))
-			window.ws.send('get-alerts')
+			window.ws.send('alert-add-' + JSON.stringify({ telegram_id: i, key_alert: s, md5: md5 }))
+			window.ws.send('alerts')
 		},
 		addCustonAlerts: function (md5) {
 			let i = this.selects[md5]
@@ -128,10 +129,13 @@ export default {
 			}
 
 			for (let k of this.defaultKeys.split('**')) {
-				window.ws.send('add-alert-' + JSON.stringify({ telegram_id: i, key_alert: k, md5: md5 }))
-      }
-			window.ws.send('get-alerts')
+				window.ws.send('alert-add-' + JSON.stringify({ telegram_id: i, key_alert: k, md5: md5 }))
+			}
+			window.ws.send('alerts')
 		}
+	},
+	unmounted () {
+		clearInterval(this.interval)
 	},
 	mounted () {
 		window.ws.addEventListener('message', (evt) => {
@@ -141,55 +145,28 @@ export default {
 				this.telegrams = jp.telegrams
 				this.alerts = jp.alerts
 				this.telegramBotName = jp.telegram_bot_name
-			}
 
-			if (jp.typeMess === 'container') {
-				let nameContainer = jp.data.Names[0].slice(1)
-
-				let second = {
-					id: jp.data.Id,
-					name: nameContainer,
-					md5Name: md5(jp.data.Hostname + jp.data.Names[0]).toString(),
-					color: colord(stc(jp.data.Hostname + nameContainer)),
-					running: jp.data.State === 'running',
-					status: jp.data.Status
-				}
-
-				let mainIndex = this.containersMenu.findIndex(key => key.hostname === jp.data.Hostname)
-				if (this.containersMenu[mainIndex]) {
-					let i = this.containersMenu[mainIndex]['containers'].findIndex(key => key.md5Name === jp.data.Md5Name)
-					if (this.containersMenu[mainIndex]['containers'][i]) {
-						this.containersMenu[mainIndex]['containers'][i] = second
-					} else {
-						this.containersMenu[mainIndex]['containers'].push(second)
-					}
-					this.containersMenu[mainIndex]['containers'].sort((a, b) => a.name > b.name)
-
-				} else {
-					this.containersMenu.push({ hostname: jp.data.Hostname, containers: [second] })
-				}
-
-				this.containersMenu.sort((a, b) => a.hostname > b.hostname)
-
-				let containers = []
-				for (let g of this.containersMenu) {
-					for (let c of g.containers) {
-						if (c.running) {
-							containers.push({ hostname: g.hostname, name: c.name, md5: c.md5Name })
+				for (let machine of this.$store.state.containersMenu) {
+					for (let cont of machine.containers) {
+						cont['hostname'] = machine.hostname
+						let mainIndex = this.containers.findIndex(key => key.md5Name === cont.md5Name)
+						if (mainIndex === -1) {
+							this.containers.push(cont)
+						} else {
+							this.containers[mainIndex] = cont
 						}
 					}
 				}
-
-				this.containers = containers
 			}
 		})
 
+
 		setTimeout(() => {
-			if (this.$store.state.isAuth) {
-				window.ws.send('get-alerts')
-				window.ws.send('get-containers')
-			}
+			window.ws.send('alerts')
 		}, 100)
+		this.interval = setInterval(() => {
+			window.ws.send('alerts')
+		}, 5000)
 	}
 }
 </script>
