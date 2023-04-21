@@ -56,8 +56,12 @@ import { Check, Close } from '@element-plus/icons-vue'
           <div v-if="Object.keys(logsData).length" class="row" v-for="(val, index) in logsData" :key="index"
                :style="{'background-color':$store.state.containersColor[val.data.md5_name]
                 ? $store.state.containersColor[val.data.md5_name].alpha(0.15).toHex() : ''}">
-            <div class="row-text">{{ val.timeCreate }} | <strong>{{ val.data.hostname }}</strong>
-              <line v-html="val.data.name"></line>
+            <div class="row-text">
+              <line class="line-tab">{{ val.timeCreate }}</line>
+              <line class="line-tab-2">
+                <strong>{{ val.data.hostname }}</strong>
+                <line v-html="val.data.name"></line>
+              </line>
               <line v-html="val.data.body"></line>
             </div>
           </div>
@@ -226,10 +230,10 @@ export default {
 							continue
 						}
 						jp.data.body = jp.data.body.replaceAll(val, `<span>${val}</span>`)
-					}
 
-					if (this.beepFlag) {
-						this.beep.play()
+						if (this.beepFlag) {
+							this.beep.play()
+						}
 					}
 				}
 
@@ -308,5 +312,18 @@ export default {
 .input-filter > .el-input__wrapper input {
 	width: 500px;
 	padding-left: 52px;
+}
+
+.line-tab {
+	display: inline-block;
+	width: 70px;
+}
+
+.line-tab-2 {
+	display: inline-block;
+	width: 170px;
+	margin-right: 10px;
+	white-space: nowrap;
+	overflow: clip;
 }
 </style>

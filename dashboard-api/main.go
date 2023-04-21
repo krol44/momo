@@ -33,7 +33,7 @@ var wsClients sync.Map
 var wsSend chan WSMess
 var containersSub sync.Map
 var containers sync.Map
-var containerStats map[string]StatsReady
+var containerStats sync.Map
 var startTime time.Time
 var password string
 var tokenInstall string
@@ -178,8 +178,6 @@ func gettingStats() {
 		return
 	}
 
-	containerStats = make(map[string]StatsReady)
-
 	for mess := range messages {
 		var jsonMess Line
 		json.Unmarshal(mess.Body, &jsonMess)
@@ -210,7 +208,7 @@ func gettingStats() {
 			stats.Dw = math.Round((float64(j.BlkioStats.IoServiceBytesRecursive[1].Value)/1000/1000)*100) / 100
 		}
 
-		containerStats[jsonMess.Md5Name] = stats
+		containerStats.Store(jsonMess.Md5Name, stats)
 	}
 }
 
@@ -387,12 +385,19 @@ func ws(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if messStr == "stats" {
+			sr := make(map[string]StatsReady)
+
+			containerStats.Range(func(key, value any) bool {
+				sr[key.(string)] = value.(StatsReady)
+				return true
+			})
+			
 			wsSend <- WSMess{
 				Conn: c,
 				Struct: struct {
 					TypeMess string                `json:"typeMess"`
 					Data     map[string]StatsReady `json:"data"`
-				}{TypeMess: "stats", Data: containerStats},
+				}{TypeMess: "stats", Data: sr},
 			}
 		}
 

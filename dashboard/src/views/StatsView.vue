@@ -8,12 +8,12 @@
           scope.row.hostname_color.alpha(1).toHex()">{{ scope.row.hostname }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="Name" sortable width="200">
+      <el-table-column prop="name" label="Name" sortable width="210">
         <template #default="scope">
           <span :style="'color: '+scope.row.hostname_color.alpha(1).toHex()">{{ scope.row.name }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="cpu" label="CPU" sortable width="80">
+      <el-table-column prop="cpu" label="CPU" sortable width="110">
         <template #default="scope">
           <span :style="scope.row.cpu >= 30?'color: #eb656f':''">{{ scope.row.cpu }} %</span>
         </template>
