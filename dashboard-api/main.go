@@ -384,14 +384,18 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		if messStr == "stats" {
+		if strings.Contains(messStr, "stats-") {
+			Md5Cont := strings.TrimPrefix(messStr, "stats-")
+
 			sr := make(map[string]StatsReady)
 
 			containerStats.Range(func(key, value any) bool {
-				sr[key.(string)] = value.(StatsReady)
+				if strings.Contains(Md5Cont, key.(string)) {
+					sr[key.(string)] = value.(StatsReady)
+				}
 				return true
 			})
-			
+
 			wsSend <- WSMess{
 				Conn: c,
 				Struct: struct {

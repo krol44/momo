@@ -84,8 +84,7 @@ func main() {
 			}
 
 			if err := sendToRabbit(openChRab, "containers", string(jsonLine)); err != nil {
-				log.Error("sleep 10 sec / sendToRabbit / " + err.Error())
-				time.Sleep(10 * time.Second)
+				log.Fatal("sendToRabbit / " + err.Error())
 			}
 		}
 	}()
@@ -107,8 +106,7 @@ func main() {
 		}
 
 		if sendToRabbit(openChRab, typeCh, string(jsonLine)) != nil {
-			log.Error("sleep 10 sec / sendToRabbit / " + err.Error())
-			time.Sleep(10 * time.Second)
+			log.Fatal("sendToRabbit / " + err.Error())
 		}
 	}
 }

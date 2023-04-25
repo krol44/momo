@@ -1,5 +1,8 @@
 <template>
   <div style="margin: 0 20px 0 20px;">
+    <el-alert type="info" :closable="false" style="margin-bottom: 20px;">
+      Viewing containers which enabled log from tab `Realtime logs`
+    </el-alert>
     <el-table :data="containers" style="width: 100%; padding-bottom: 200px;"
               :default-sort="{ prop: 'cpu', order: 'descending' }">
       <el-table-column prop="hostname" label="Host" sortable width="150">
@@ -48,12 +51,18 @@ export default {
 		clearInterval(this.interval)
 	},
 	mounted () {
+		let j = JSON.parse(window.localStorage.getItem('subs-log') ?
+			window.localStorage.getItem('subs-log') : '{}')
+
 		window.ws.addEventListener('message', (evt) => {
 			let jp = JSON.parse(evt.data)
 
 			if (jp.typeMess === 'stats') {
 				for (let machine of this.$store.state.containersMenu) {
 					for (let cont of machine.containers) {
+						if (!j.hasOwnProperty(cont.md5Name)) {
+							continue
+						}
 
 						let stats = jp.data[cont.md5Name]
 						cont['cpu'] = stats?.cpu ? stats.cpu : 0
@@ -78,11 +87,12 @@ export default {
 			}
 		})
 
+		let c = Object.keys(j).join('-')
 		setTimeout(() => {
-			window.ws.send('stats')
+			window.ws.send('stats-' + c)
 		}, 100)
 		this.interval = setInterval(() => {
-			window.ws.send('stats')
+			window.ws.send('stats-' + c)
 		}, 2000)
 	}
 }

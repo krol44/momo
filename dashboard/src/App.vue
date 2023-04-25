@@ -17,7 +17,7 @@ const handleSelect = (key) => {
 </script>
 <template>
   <div v-if="!isAuth" class="common-layout"
-       style="display: flex; justify-content: center; width: 100%; padding-top: 120px;">
+       style="display: flex; justify-content: center; width: 100%; padding-top: 150px;">
     <el-input v-model="pass" type="password" placeholder="password..."
               size="large" style="width: 200px;" class="w-50 m-2" ref="login" @keydown.enter="login" />
     <el-button type="primary" size="large" plain style="margin-left: 10px;" @click.prevent="login">login</el-button>
@@ -315,16 +315,18 @@ export default {
 			}
 		}
 		this.ws.onerror = (evt) => {
-			console.log(evt.data)
+			console.log(evt)
 		}
 
-		setTimeout(() => {
-			window.ws.send('containers')
-    }, 100)
-		setInterval(() => {
-			window.ws.send('containers')
-			this.purifyMenu()
-		}, 2000)
+		if (this.isAuth) {
+			setTimeout(() => {
+				window.ws.send('containers')
+			}, 100)
+			setInterval(() => {
+				window.ws.send('containers')
+				this.purifyMenu()
+			}, 2000)
+		}
 	}
 }
 </script>
