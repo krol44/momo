@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"github.com/gorilla/websocket"
+	"math/big"
 	"time"
 )
 
@@ -206,11 +207,12 @@ type StatsContainer struct {
 }
 
 type StatsReady struct {
-	Cpu    float64 `json:"cpu"`
-	Mem    float64 `json:"mem"`
-	MemMax float64 `json:"mem_max"`
-	NetI   float64 `json:"net_i"`
-	NetO   float64 `json:"net_o"`
-	Dr     float64 `json:"d_r"`
-	Dw     float64 `json:"d_w"`
+	Cpu    float64  `json:"cpu"`
+	Mem    string   `json:"mem"`
+	MemNum *big.Int `json:"mem_num"`
+	MemMax string   `json:"mem_max"`
+	NetI   string   `json:"net_i"`
+	NetO   string   `json:"net_o"`
+	Dr     string   `json:"d_r"`
+	Dw     string   `json:"d_w"`
 }

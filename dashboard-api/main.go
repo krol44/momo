@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/dustin/go-humanize"
 	"github.com/gorilla/websocket"
 	"github.com/jmoiron/sqlx"
 	"github.com/krol44/telegram-bot-api"
@@ -55,8 +56,8 @@ func main() {
 	gettingStatistic()
 	tgBot()
 	gettingAlerts()
-	wsSend = make(chan WSMess, 0)
-	alertChan = make(chan Line, 0)
+	wsSend = make(chan WSMess)
+	alertChan = make(chan Line)
 
 	// alert find
 	go func() {
@@ -197,15 +198,26 @@ func gettingStats() {
 			float64(j.CPUStats.SystemCPUUsage-j.PrecpuStats.SystemCPUUsage)*
 			float64(j.CPUStats.OnlineCpus)*100)*100) / 100
 
-		stats.Mem = math.Round((float64(j.MemoryStats.Usage-j.MemoryStats.Stats.InactiveFile)/1024/1024)*100) / 100
-		stats.MemMax = math.Round((float64(j.MemoryStats.Limit)/1024/1024)*100) / 100
+		m, err := humanize.ParseBigBytes(strconv.FormatInt(int64(j.MemoryStats.Usage-j.MemoryStats.Stats.InactiveFile),
+			10))
+		if err != nil {
+			continue
+		}
+		stats.Mem = humanize.BigIBytes(m)
+		stats.MemNum = m
 
-		stats.NetI = math.Round((float64(j.Networks.Eth0.RxBytes)/1000/1000)*100) / 100
-		stats.NetO = math.Round((float64(j.Networks.Eth0.TxBytes)/1000/1000)*100) / 100
+		ml, err := humanize.ParseBigBytes(strconv.FormatInt(j.MemoryStats.Limit, 10))
+		if err != nil {
+			continue
+		}
+		stats.MemMax = humanize.BigIBytes(ml)
+
+		stats.NetI = humanize.Bytes(uint64(j.Networks.Eth0.RxBytes))
+		stats.NetO = humanize.Bytes(uint64(j.Networks.Eth0.TxBytes))
 
 		if len(j.BlkioStats.IoServiceBytesRecursive) >= 2 {
-			stats.Dr = math.Round((float64(j.BlkioStats.IoServiceBytesRecursive[0].Value)/1000/1000)*100) / 100
-			stats.Dw = math.Round((float64(j.BlkioStats.IoServiceBytesRecursive[1].Value)/1000/1000)*100) / 100
+			stats.Dr = humanize.Bytes(uint64(j.BlkioStats.IoServiceBytesRecursive[0].Value))
+			stats.Dw = humanize.Bytes(uint64(j.BlkioStats.IoServiceBytesRecursive[1].Value))
 		}
 
 		containerStats.Store(jsonMess.Md5Name, stats)

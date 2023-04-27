@@ -21,16 +21,16 @@
           <span :style="scope.row.cpu >= 30?'color: #eb656f':''">{{ scope.row.cpu }} %</span>
         </template>
       </el-table-column>
-      <el-table-column prop="mem" label="Memory / Max" #default="scope" sortable width="250">
-          <span :style="scope.row.mem > 200 ? 'color: #eb656f':''">{{ scope.row.mem }} MB</span
-          > {{ scope.row.mem_max }} MB
+      <el-table-column prop="mem_num" label="Memory / Max" #default="scope" sortable width="250">
+          <span :style="scope.row.mem_num > 2.097e+8 ? 'color: #eb656f':''">{{ scope.row.mem }}</span
+          > / {{ scope.row.mem_max }}
       </el-table-column>
       <el-table-column prop="status" label="Status" sortable width="180" />
       <el-table-column label="Network I/O" #default="scope" width="250">
-        {{ scope.row.net_i }} MB / {{ scope.row.net_o }} MB
+        {{ scope.row.net_i }} / {{ scope.row.net_o }}
       </el-table-column>
       <el-table-column label="Disk R/W" #default="scope" width="250">
-        {{ scope.row.d_r }} MB / {{ scope.row.d_w }} MB
+        {{ scope.row.d_r }} / {{ scope.row.d_w }}
       </el-table-column>
     </el-table>
   </div>
@@ -69,6 +69,7 @@ export default {
 						cont['d_r'] = stats?.d_r ? stats.d_r : 0
 						cont['d_w'] = stats?.d_w ? stats.d_w : 0
 						cont['mem'] = stats?.mem ? stats.mem : 0
+						cont['mem_num'] = stats?.mem_num ? stats.mem_num : 0
 						cont['mem_max'] = stats?.mem_max ? stats.mem_max : 0
 						cont['net_i'] = stats?.net_i ? stats.net_i : 0
 						cont['net_o'] = stats?.net_o ? stats.net_o : 0
