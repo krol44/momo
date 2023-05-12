@@ -16,6 +16,7 @@ import (
 	"github.com/krol44/telegram-bot-api"
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/sirupsen/logrus"
+	"html"
 	"io"
 	"math"
 	"math/rand"
@@ -785,7 +786,7 @@ func sendAlert(a PreparedAlert) {
 		)
 		cl := map[string]bool{}
 		for _, l := range v {
-			lg += l.Data.Body + "\n"
+			lg += html.EscapeString(l.Data.Body) + "\n"
 			info = "<b>Key alert:</b> " + l.Alert.KeyAlert + " — " + l.Data.Hostname + " <b>" + l.Data.Name + "</b>\n\n"
 			cl[l.Alert.TelegramID] = true
 		}
