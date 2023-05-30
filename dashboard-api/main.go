@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	_ "modernc.org/sqlite"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path"
 	"runtime"
@@ -48,6 +49,10 @@ var manyRequest bool
 var upgrader = websocket.Upgrader{}
 
 func main() {
+	go func() {
+		http.ListenAndServe(":8777", nil)
+	}()
+
 	initTables()
 	startTime = time.Now()
 	password = os.Getenv("DASHBOARD_PASS")
@@ -740,6 +745,7 @@ func gettingAlerts() {
 
 func findAlert() PreparedAlert {
 	ticker := time.NewTicker(time.Second * 2)
+	defer ticker.Stop()
 	mapSend := make(PreparedAlert)
 
 	for v := range alertChan {
