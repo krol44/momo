@@ -2,9 +2,10 @@ package main
 
 import (
 	"database/sql"
-	"github.com/gorilla/websocket"
 	"math/big"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type Line struct {
@@ -154,39 +155,42 @@ type StatsContainer struct {
 		} `json:"throttling_data"`
 	} `json:"precpu_stats"`
 	MemoryStats struct {
-		Usage int `json:"usage"`
+		Usage int64 `json:"usage"`
 		Stats struct {
-			ActiveAnon            int `json:"active_anon"`
-			ActiveFile            int `json:"active_file"`
-			Anon                  int `json:"anon"`
-			AnonThp               int `json:"anon_thp"`
-			File                  int `json:"file"`
-			FileDirty             int `json:"file_dirty"`
-			FileMapped            int `json:"file_mapped"`
-			FileWriteback         int `json:"file_writeback"`
-			InactiveAnon          int `json:"inactive_anon"`
-			InactiveFile          int `json:"inactive_file"`
-			KernelStack           int `json:"kernel_stack"`
-			Pgactivate            int `json:"pgactivate"`
-			Pgdeactivate          int `json:"pgdeactivate"`
-			Pgfault               int `json:"pgfault"`
-			Pglazyfree            int `json:"pglazyfree"`
-			Pglazyfreed           int `json:"pglazyfreed"`
-			Pgmajfault            int `json:"pgmajfault"`
-			Pgrefill              int `json:"pgrefill"`
-			Pgscan                int `json:"pgscan"`
-			Pgsteal               int `json:"pgsteal"`
-			Shmem                 int `json:"shmem"`
-			Slab                  int `json:"slab"`
-			SlabReclaimable       int `json:"slab_reclaimable"`
-			SlabUnreclaimable     int `json:"slab_unreclaimable"`
-			Sock                  int `json:"sock"`
-			ThpCollapseAlloc      int `json:"thp_collapse_alloc"`
-			ThpFaultAlloc         int `json:"thp_fault_alloc"`
-			Unevictable           int `json:"unevictable"`
-			WorkingsetActivate    int `json:"workingset_activate"`
-			WorkingsetNodereclaim int `json:"workingset_nodereclaim"`
-			WorkingsetRefault     int `json:"workingset_refault"`
+			ActiveAnon            int64 `json:"active_anon"`
+			ActiveFile            int64 `json:"active_file"`
+			Anon                  int64 `json:"anon"`
+			AnonThp               int64 `json:"anon_thp"`
+			File                  int64 `json:"file"`
+			FileDirty             int64 `json:"file_dirty"`
+			FileMapped            int64 `json:"file_mapped"`
+			FileWriteback         int64 `json:"file_writeback"`
+			InactiveAnon          int64 `json:"inactive_anon"`
+			InactiveFile          int64 `json:"inactive_file"`
+			KernelStack           int64 `json:"kernel_stack"`
+			Pgactivate            int64 `json:"pgactivate"`
+			Pgdeactivate          int64 `json:"pgdeactivate"`
+			Pgfault               int64 `json:"pgfault"`
+			Pglazyfree            int64 `json:"pglazyfree"`
+			Pglazyfreed           int64 `json:"pglazyfreed"`
+			Pgmajfault            int64 `json:"pgmajfault"`
+			Pgrefill              int64 `json:"pgrefill"`
+			Pgscan                int64 `json:"pgscan"`
+			Pgsteal               int64 `json:"pgsteal"`
+			Shmem                 int64 `json:"shmem"`
+			Slab                  int64 `json:"slab"`
+			SlabReclaimable       int64 `json:"slab_reclaimable"`
+			SlabUnreclaimable     int64 `json:"slab_unreclaimable"`
+			Sock                  int64 `json:"sock"`
+			ThpCollapseAlloc      int64 `json:"thp_collapse_alloc"`
+			ThpFaultAlloc         int64 `json:"thp_fault_alloc"`
+			Unevictable           int64 `json:"unevictable"`
+			WorkingsetActivate    int64 `json:"workingset_activate"`
+			WorkingsetNodereclaim int64 `json:"workingset_nodereclaim"`
+			WorkingsetRefault     int64 `json:"workingset_refault"`
+			Cache                 int64 `json:"cache"`
+			RSS                   int64 `json:"rss"`
+			TotalInactiveFile     int64 `json:"total_inactive_file"`
 		} `json:"stats"`
 		Limit int64 `json:"limit"`
 	} `json:"memory_stats"`
@@ -194,14 +198,14 @@ type StatsContainer struct {
 	ID       string `json:"id"`
 	Networks struct {
 		Eth0 struct {
-			RxBytes   int `json:"rx_bytes"`
-			RxPackets int `json:"rx_packets"`
-			RxErrors  int `json:"rx_errors"`
-			RxDropped int `json:"rx_dropped"`
-			TxBytes   int `json:"tx_bytes"`
-			TxPackets int `json:"tx_packets"`
-			TxErrors  int `json:"tx_errors"`
-			TxDropped int `json:"tx_dropped"`
+			RxBytes   int64 `json:"rx_bytes"`
+			RxPackets int64 `json:"rx_packets"`
+			RxErrors  int64 `json:"rx_errors"`
+			RxDropped int64 `json:"rx_dropped"`
+			TxBytes   int64 `json:"tx_bytes"`
+			TxPackets int64 `json:"tx_packets"`
+			TxErrors  int64 `json:"tx_errors"`
+			TxDropped int64 `json:"tx_dropped"`
 		} `json:"eth0"`
 	} `json:"networks"`
 }

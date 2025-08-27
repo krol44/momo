@@ -10,17 +10,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dustin/go-humanize"
-	"github.com/gorilla/websocket"
-	"github.com/jmoiron/sqlx"
-	"github.com/krol44/telegram-bot-api"
-	amqp "github.com/rabbitmq/amqp091-go"
-	log "github.com/sirupsen/logrus"
 	"html"
 	"io"
 	"math"
 	"math/rand"
-	_ "modernc.org/sqlite"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -30,12 +23,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dustin/go-humanize"
+	"github.com/gorilla/websocket"
+	"github.com/jmoiron/sqlx"
+	"github.com/krol44/telegram-bot-api"
+	amqp "github.com/rabbitmq/amqp091-go"
+	log "github.com/sirupsen/logrus"
+	_ "modernc.org/sqlite"
 )
 
 var wsClients sync.Map
 var wsSend chan WSMess
 var containersSub sync.Map
 var containers sync.Map
+var containersDataStat sync.Map
 var containerStats sync.Map
 var startTime time.Time
 var password string
@@ -50,7 +52,11 @@ var upgrader = websocket.Upgrader{}
 
 func main() {
 	go func() {
-		http.ListenAndServe(":8777", nil)
+		http.HandleFunc("/metrics", metricsHandler)
+		err := http.ListenAndServe(":8777", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}()
 
 	initTables()
@@ -78,39 +84,49 @@ func main() {
 		mux := http.NewServeMux()
 		log.Info("start dashboard")
 		mux.HandleFunc("/ws", ws)
-		mux.HandleFunc("/install-momo.sh", func(w http.ResponseWriter, r *http.Request) {
-			if r.FormValue("token") == tokenInstall {
-				zip, _ := os.ReadFile("momo-service.zip")
-				bz := b64.StdEncoding.EncodeToString(zip)
-				_, err := fmt.Fprint(w, "#!/usr/bin/env bash\n"+
-					"cd /tmp || exit && base64 -d <<< "+bz+" > momo-service.zip\n"+
-					"unzip -o momo-service.zip -d momo-service\n"+
-					"cd momo-service || exit && sh docker-start.sh")
-				if err != nil {
-					log.Error(err)
+		mux.HandleFunc(
+			"/install-momo.sh", func(w http.ResponseWriter, r *http.Request) {
+				if r.FormValue("token") == tokenInstall {
+					zip, _ := os.ReadFile("momo-service.zip")
+					bz := b64.StdEncoding.EncodeToString(zip)
+					_, err := fmt.Fprint(
+						w, "#!/usr/bin/env bash\n"+
+							"cd /tmp || exit && base64 -d <<< "+bz+" > momo-service.zip\n"+
+							"unzip -o momo-service.zip -d momo-service\n"+
+							"cd momo-service || exit && sh docker-start.sh",
+					)
+					if err != nil {
+						log.Error(err)
+					}
+				} else {
+					_, err := fmt.Fprint(w, "oops, bad token")
+					if err != nil {
+						log.Error(err)
+					}
 				}
-			} else {
-				_, err := fmt.Fprint(w, "oops, bad token")
-				if err != nil {
-					log.Error(err)
-				}
-			}
-		})
+			},
+		)
 
 		mux.Handle("/", http.StripPrefix("/", http.FileServer(http.Dir("dist"))))
 		for _, v := range []string{"/stats", "/alert", "/setting"} {
-			mux.HandleFunc(v, func(w http.ResponseWriter, r *http.Request) {
-				index, _ := os.ReadFile("dist/index.html")
-				w.Write(index)
-			})
+			mux.HandleFunc(
+				v, func(w http.ResponseWriter, r *http.Request) {
+					index, _ := os.ReadFile("dist/index.html")
+					w.Write(index)
+				},
+			)
 		}
 
-		if os.Getenv("DOMAIN") == "localhost" {
-			log.Fatal(http.ListenAndServe(":8844", mux))
-		} else {
-			log.Fatal(http.ListenAndServeTLS(":8844",
-				os.Getenv("CLIENT_CERT"), os.Getenv("CLIENT_KEY"), mux))
-		}
+		//if os.Getenv("DOMAIN") == "localhost" {
+		log.Fatal(http.ListenAndServe(":8844", mux))
+		//} else {
+		//	log.Fatal(
+		//		http.ListenAndServeTLS(
+		//			":8844",
+		//			os.Getenv("CLIENT_CERT"), os.Getenv("CLIENT_KEY"), mux,
+		//		),
+		//	)
+		//}
 	}()
 
 	// send ws
@@ -118,17 +134,19 @@ func main() {
 		for m := range wsSend {
 			err := m.Conn.WriteJSON(m.Struct)
 			if err != nil {
-				containersSub.Range(func(md5Name, cs any) bool {
-					for conn := range cs.(map[*websocket.Conn]bool) {
-						if conn == m.Conn {
-							log.Debug("close ws and delete from map containersSub")
-							delete(cs.(map[*websocket.Conn]bool), conn)
-							containersSub.Store(md5Name, cs)
-							conn.Close()
+				containersSub.Range(
+					func(md5Name, cs any) bool {
+						for conn := range cs.(map[*websocket.Conn]bool) {
+							if conn == m.Conn {
+								log.Debug("close ws and delete from map containersSub")
+								delete(cs.(map[*websocket.Conn]bool), conn)
+								containersSub.Store(md5Name, cs)
+								conn.Close()
+							}
 						}
-					}
-					return true
-				})
+						return true
+					},
+				)
 
 				wsClients.Delete(m.Conn)
 				m.Conn.Close()
@@ -187,12 +205,15 @@ func gettingStats() {
 
 	for mess := range messages {
 		var jsonMess Line
-		json.Unmarshal(mess.Body, &jsonMess)
+		err := json.Unmarshal(mess.Body, &jsonMess)
+		if err != nil {
+			log.Warn(err)
+		}
 
 		jsonMess.Md5Name = fmt.Sprintf("%x", md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
 
 		var j StatsContainer
-		err := json.Unmarshal([]byte(jsonMess.Body), &j)
+		err = json.Unmarshal([]byte(jsonMess.Body), &j)
 		if err != nil {
 			log.Warn(err)
 			continue
@@ -200,12 +221,18 @@ func gettingStats() {
 
 		stats := StatsReady{}
 
-		stats.Cpu = math.Round((float64(j.CPUStats.CPUUsage.TotalUsage-j.PrecpuStats.CPUUsage.TotalUsage)/
-			float64(j.CPUStats.SystemCPUUsage-j.PrecpuStats.SystemCPUUsage)*
-			float64(j.CPUStats.OnlineCpus)*100)*100) / 100
+		stats.Cpu = math.Round(
+			(float64(j.CPUStats.CPUUsage.TotalUsage-j.PrecpuStats.CPUUsage.TotalUsage)/
+				float64(j.CPUStats.SystemCPUUsage-j.PrecpuStats.SystemCPUUsage)*
+				float64(j.CPUStats.OnlineCpus)*100)*100,
+		) / 100
 
-		m, err := humanize.ParseBigBytes(strconv.FormatInt(int64(j.MemoryStats.Usage-j.MemoryStats.Stats.InactiveFile),
-			10))
+		m, err := humanize.ParseBigBytes(
+			strconv.FormatInt(
+				j.MemoryStats.Usage-j.MemoryStats.Stats.InactiveFile,
+				10,
+			),
+		)
 		if err != nil {
 			continue
 		}
@@ -227,6 +254,10 @@ func gettingStats() {
 		}
 
 		containerStats.Store(jsonMess.Md5Name, stats)
+
+		if j.Name != "" {
+			updateMetric(jsonMess.Md5Name, j)
+		}
 	}
 }
 
@@ -273,38 +304,46 @@ func gettingLogs() {
 	}
 
 	for mess := range messages {
-		var jsonMess Line
-		json.Unmarshal(mess.Body, &jsonMess)
+		go func() {
+			var jsonMess Line
+			json.Unmarshal(mess.Body, &jsonMess)
 
-		jsonMess.Md5Name = fmt.Sprintf("%x",
-			md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)))
+			jsonMess.Md5Name = fmt.Sprintf(
+				"%x",
+				md5.Sum([]byte(jsonMess.Hostname+jsonMess.Name)),
+			)
 
-		alertChan <- jsonMess
+			alertChan <- jsonMess
 
-		containersSub.Range(func(md5Name, cs any) bool {
-			if jsonMess.Md5Name != md5Name {
-				return true
-			}
+			containersSub.Range(
+				func(md5Name, cs any) bool {
+					if jsonMess.Md5Name != md5Name {
+						return true
+					}
 
-			str := struct {
-				TypeMess string `json:"typeMess"`
-				Data     Line   `json:"data"`
-			}{TypeMess: "log", Data: jsonMess}
+					str := struct {
+						TypeMess string `json:"typeMess"`
+						Data     Line   `json:"data"`
+					}{TypeMess: "log", Data: jsonMess}
 
-			str.Data.Md5Name = fmt.Sprintf("%x",
-				md5.Sum([]byte(str.Data.Hostname+str.Data.Name)))
+					str.Data.Md5Name = fmt.Sprintf(
+						"%x",
+						md5.Sum([]byte(str.Data.Hostname+str.Data.Name)),
+					)
 
-			for conn, sub := range cs.(map[*websocket.Conn]bool) {
-				if sub == false {
-					continue
-				}
-				wsSend <- WSMess{
-					Conn:   conn,
-					Struct: str,
-				}
-			}
-			return true
-		})
+					for conn, sub := range cs.(map[*websocket.Conn]bool) {
+						if sub == false {
+							continue
+						}
+						wsSend <- WSMess{
+							Conn:   conn,
+							Struct: str,
+						}
+					}
+					return true
+				},
+			)
+		}()
 	}
 }
 
@@ -363,10 +402,12 @@ func ws(w http.ResponseWriter, r *http.Request) {
 
 		cookie, err := r.Cookie("token")
 		if err != nil || fmt.Sprintf("%x", sha256.Sum256([]byte(password+startTime.String()))) != cookie.Value {
-			err := c.WriteJSON(struct {
-				TypeMess string `json:"typeMess"`
-				Data     string `json:"data"`
-			}{TypeMess: "auth", Data: "fail"})
+			err := c.WriteJSON(
+				struct {
+					TypeMess string `json:"typeMess"`
+					Data     string `json:"data"`
+				}{TypeMess: "auth", Data: "fail"},
+			)
 			if err != nil {
 				log.Error(err)
 			}
@@ -383,23 +424,27 @@ func ws(w http.ResponseWriter, r *http.Request) {
 				Struct: struct {
 					TypeMess string `json:"typeMess"`
 					Data     string `json:"data"`
-				}{TypeMess: "install-url",
+				}{
+					TypeMess: "install-url",
 					Data: "curl -sk https://" + os.Getenv("DOMAIN") + ":8844/install-momo.sh?token=" +
-						tokenInstall + " | sudo bash -"},
+						tokenInstall + " | sudo bash -",
+				},
 			}
 		}
 
 		if messStr == "containers" {
-			containers.Range(func(_, val any) bool {
-				wsSend <- WSMess{
-					Conn: c,
-					Struct: struct {
-						TypeMess string    `json:"typeMess"`
-						Data     Container `json:"data"`
-					}{TypeMess: "container", Data: val.(Container)},
-				}
-				return true
-			})
+			containers.Range(
+				func(_, val any) bool {
+					wsSend <- WSMess{
+						Conn: c,
+						Struct: struct {
+							TypeMess string    `json:"typeMess"`
+							Data     Container `json:"data"`
+						}{TypeMess: "container", Data: val.(Container)},
+					}
+					return true
+				},
+			)
 		}
 
 		if strings.Contains(messStr, "stats-") {
@@ -407,12 +452,14 @@ func ws(w http.ResponseWriter, r *http.Request) {
 
 			sr := make(map[string]StatsReady)
 
-			containerStats.Range(func(key, value any) bool {
-				if strings.Contains(Md5Cont, key.(string)) {
-					sr[key.(string)] = value.(StatsReady)
-				}
-				return true
-			})
+			containerStats.Range(
+				func(key, value any) bool {
+					if strings.Contains(Md5Cont, key.(string)) {
+						sr[key.(string)] = value.(StatsReady)
+					}
+					return true
+				},
+			)
 
 			wsSend <- WSMess{
 				Conn: c,
@@ -454,10 +501,12 @@ func ws(w http.ResponseWriter, r *http.Request) {
 
 			var al []Alert
 			err = sqlite().
-				Select(&al, `SELECT a.id, a.container_md5, a.telegram_id, a.key_alert, a.date_create,
+				Select(
+					&al, `SELECT a.id, a.container_md5, a.telegram_id, a.key_alert, a.date_create,
        										u.telegram_name
 									FROM alerts a
-									LEFT JOIN users u on u.telegram_id = a.telegram_id`)
+									LEFT JOIN users u on u.telegram_id = a.telegram_id`,
+				)
 			if err != nil {
 				log.Error(err)
 			}
@@ -489,9 +538,11 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			}
 
 			var al Alert
-			err = sqlite().Get(&al, `SELECT id, container_md5, telegram_id, key_alert FROM alerts 
+			err = sqlite().Get(
+				&al, `SELECT id, container_md5, telegram_id, key_alert FROM alerts 
 			                                             WHERE container_md5 = ? AND telegram_id = ? AND key_alert = ?`,
-				j.Md5, j.TelegramID, j.KeyAlert)
+				j.Md5, j.TelegramID, j.KeyAlert,
+			)
 			if err != nil && sql.ErrNoRows != err {
 				log.Error(err)
 				continue
@@ -500,8 +551,10 @@ func ws(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			sqlite().Query(`INSERT INTO alerts (container_md5, telegram_id, key_alert, date_create)
-									VALUES (?, ?, ?, datetime('now'))`, j.Md5, j.TelegramID, j.KeyAlert)
+			sqlite().Query(
+				`INSERT INTO alerts (container_md5, telegram_id, key_alert, date_create)
+									VALUES (?, ?, ?, datetime('now'))`, j.Md5, j.TelegramID, j.KeyAlert,
+			)
 			sqlite().Close()
 		}
 		if strings.Contains(messStr, "alert-rm-") {
@@ -515,10 +568,12 @@ func gettingContainers() {
 	go func() {
 		for {
 			time.Sleep(time.Second * 10)
-			containers.Range(func(key, _ any) bool {
-				containers.Delete(key)
-				return true
-			})
+			containers.Range(
+				func(key, _ any) bool {
+					containers.Delete(key)
+					return true
+				},
+			)
 		}
 	}()
 
@@ -563,10 +618,12 @@ func gettingContainers() {
 			continue
 		}
 
-		jsonContainer.Md5Name = fmt.Sprintf("%x",
-			md5.Sum([]byte(jsonContainer.Hostname+jsonContainer.Names[0])))
-
+		jsonContainer.Md5Name = fmt.Sprintf(
+			"%x",
+			md5.Sum([]byte(jsonContainer.Hostname+jsonContainer.Names[0])),
+		)
 		containers.Store(jsonContainer.Md5Name, jsonContainer)
+		containersDataStat.Store(jsonContainer.Md5Name, jsonContainer)
 	}
 }
 
@@ -581,8 +638,10 @@ func connectRabbit(typeCh string) *amqp.Connection {
 	}
 	cfg.RootCAs.AppendCertsFromPEM(ca)
 
-	cert, err := tls.LoadX509KeyPair(os.Getenv("CLIENT_CERT"),
-		os.Getenv("CLIENT_KEY"))
+	cert, err := tls.LoadX509KeyPair(
+		os.Getenv("CLIENT_CERT"),
+		os.Getenv("CLIENT_KEY"),
+	)
 	cfg.Certificates = append(cfg.Certificates, cert)
 	if err != nil {
 		log.Fatalln(err)
@@ -616,16 +675,18 @@ func gettingStatistic() {
 				log.Error(err)
 			}
 
-			wsClients.Range(func(conn, _ any) bool {
-				wsSend <- WSMess{
-					Conn: conn.(*websocket.Conn),
-					Struct: struct {
-						TypeMess string    `json:"typeMess"`
-						Data     Statistic `json:"data"`
-					}{TypeMess: "statistic", Data: js},
-				}
-				return true
-			})
+			wsClients.Range(
+				func(conn, _ any) bool {
+					wsSend <- WSMess{
+						Conn: conn.(*websocket.Conn),
+						Struct: struct {
+							TypeMess string    `json:"typeMess"`
+							Data     Statistic `json:"data"`
+						}{TypeMess: "statistic", Data: js},
+					}
+					return true
+				},
+			)
 
 			time.Sleep(time.Second)
 		}
@@ -644,7 +705,8 @@ func initTables() {
 	db := sqlite()
 	defer db.Close()
 
-	if _, err := db.Exec(`
+	if _, err := db.Exec(
+		`
 create table if not exists users
 (
   telegram_id   BIGINT,
@@ -664,7 +726,8 @@ create table if not exists alerts
     telegram_id     	TEXT,
     key_alert 			TEXT,
     date_create			TEXT
-);`); err != nil {
+);`,
+	); err != nil {
 		log.Error(err)
 	}
 }
@@ -693,20 +756,28 @@ func tgBot() {
 					user := struct {
 						TelegramId int64 `db:"telegram_id"`
 					}{}
-					_ = db.Get(&user, "SELECT telegram_id FROM users WHERE telegram_id = ?",
-						u.Message.From.ID)
+					_ = db.Get(
+						&user, "SELECT telegram_id FROM users WHERE telegram_id = ?",
+						u.Message.From.ID,
+					)
 
 					if user.TelegramId == 0 {
-						_, err := db.Exec(`INSERT INTO users (telegram_id, telegram_name, date_create)
-							VALUES (?, ?, datetime('now'))`, u.Message.From.ID, u.Message.From.UserName)
+						_, err := db.Exec(
+							`INSERT INTO users (telegram_id, telegram_name, date_create)
+							VALUES (?, ?, datetime('now'))`, u.Message.From.ID, u.Message.From.UserName,
+						)
 						if err != nil {
 							log.Error(err)
 						}
 					}
 					db.Close()
 
-					botIn.Send(tgbotapi.NewSticker(u.Message.Chat.ID,
-						tgbotapi.FileID("CAACAgIAAxkBAAMHZDqdPa-ipjZbt5tFJ6g0rMNqc6gAAjEAAygPahTT_70FDNZySC8E")))
+					botIn.Send(
+						tgbotapi.NewSticker(
+							u.Message.Chat.ID,
+							tgbotapi.FileID("CAACAgIAAxkBAAMHZDqdPa-ipjZbt5tFJ6g0rMNqc6gAAjEAAygPahTT_70FDNZySC8E"),
+						),
+					)
 				}
 			}
 		}
@@ -728,15 +799,17 @@ func gettingAlerts() {
 				alertKeys.Store(val.ID, val)
 			}
 
-			alertKeys.Range(func(key, _ any) bool {
-				for _, val := range data {
-					if val.ID == key {
-						return true
+			alertKeys.Range(
+				func(key, _ any) bool {
+					for _, val := range data {
+						if val.ID == key {
+							return true
+						}
 					}
-				}
-				alertKeys.Delete(key)
-				return true
-			})
+					alertKeys.Delete(key)
+					return true
+				},
+			)
 
 			time.Sleep(time.Second * 5)
 		}
@@ -749,20 +822,24 @@ func findAlert() PreparedAlert {
 	mapSend := make(PreparedAlert)
 
 	for v := range alertChan {
-		alertKeys.Range(func(_, k any) bool {
-			if v.Md5Name != k.(Alert).ContainerMd5 {
+		alertKeys.Range(
+			func(_, k any) bool {
+				if v.Md5Name != k.(Alert).ContainerMd5 {
+					return true
+				}
+				if strings.Contains(strings.ToLower(v.Body), strings.ToLower(k.(Alert).KeyAlert)) {
+					alertData := k.(Alert)
+					mapSend[v.Md5Name+alertData.KeyAlert] = append(
+						mapSend[v.Md5Name+alertData.KeyAlert],
+						struct {
+							Alert Alert
+							Data  Line
+						}{alertData, v},
+					)
+				}
 				return true
-			}
-			if strings.Contains(strings.ToLower(v.Body), strings.ToLower(k.(Alert).KeyAlert)) {
-				alertData := k.(Alert)
-				mapSend[v.Md5Name+alertData.KeyAlert] = append(mapSend[v.Md5Name+alertData.KeyAlert],
-					struct {
-						Alert Alert
-						Data  Line
-					}{alertData, v})
-			}
-			return true
-		})
+			},
+		)
 
 		select {
 		case <-ticker.C:
@@ -825,13 +902,15 @@ func sendAlert(a PreparedAlert) {
 }
 
 func logSetup() {
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp: true,
-		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
-			filename := path.Base(f.File)
-			return fmt.Sprintf("%s()", f.Function), fmt.Sprintf(" %s:%d", filename, f.Line)
+	log.SetFormatter(
+		&log.TextFormatter{
+			FullTimestamp: true,
+			CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+				filename := path.Base(f.File)
+				return fmt.Sprintf("%s()", f.Function), fmt.Sprintf(" %s:%d", filename, f.Line)
+			},
 		},
-	})
+	)
 	if l, err := log.ParseLevel("debug"); err == nil {
 		log.SetLevel(l)
 		log.SetReportCaller(l == log.DebugLevel)

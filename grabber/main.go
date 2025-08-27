@@ -7,8 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
-	log "github.com/sirupsen/logrus"
 	"go/types"
 	"net"
 	"net/textproto"
@@ -18,9 +16,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	log "github.com/sirupsen/logrus"
 )
 
 var syncContainers sync.Map
+var badContainers sync.Map
 var hostname = os.Getenv("HOSTNAME")
 var chanLines chan Line
 var chanInfoCont chan Container
@@ -46,7 +48,9 @@ func main() {
 					val.Hostname = hostname
 					chanInfoCont <- val
 
-					go runObserverLogs(val)
+					if _, ok := badContainers.Load(val.ID); !ok {
+						go runObserverLogs(val)
+					}
 					go runObserverStats(val)
 				}
 			}
@@ -105,6 +109,10 @@ func main() {
 			typeCh = "stats"
 		}
 
+		if strings.Contains(val.Body, "Error grabbing logs: invalid character") {
+			badContainers.Store(val.ContainerID, true)
+		}
+
 		if sendToRabbit(openChRab, typeCh, string(jsonLine)) != nil {
 			log.Fatal("sendToRabbit / " + err.Error())
 		}
@@ -158,10 +166,14 @@ func runObserverLogs(container Container) {
 	}
 
 	conn := connectDocker()
-	tp := request(conn,
-		fmt.Sprintf("/containers/"+container.ID+"/logs"+
-			"?stdout=true&stderr=true&follow=true&since=%d",
-			time.Now().Unix()-10))
+	tp := request(
+		conn,
+		fmt.Sprintf(
+			"/containers/"+container.ID+"/logs"+
+				"?stdout=true&stderr=true&follow=true&since=%d",
+			time.Now().Unix()-10,
+		),
+	)
 
 	toggle := false
 	for {
@@ -183,8 +195,10 @@ func runObserverLogs(container Container) {
 			lineOut = line
 		}
 
-		chanLines <- Line{container.ID, container.Names[0], hostname, "logs",
-			lineOut}
+		chanLines <- Line{
+			container.ID, container.Names[0], hostname, "logs",
+			lineOut,
+		}
 
 		if !toggle && strings.Contains(lineOut, "Server: ") {
 			toggle = true
@@ -235,8 +249,10 @@ func runObserverStats(container Container) {
 			return
 		}
 
-		chanLines <- Line{container.ID, container.Names[0], hostname, "stats",
-			line}
+		chanLines <- Line{
+			container.ID, container.Names[0], hostname, "stats",
+			line,
+		}
 	}
 }
 
@@ -251,8 +267,10 @@ func connectRabbit() *amqp.Connection {
 	}
 	cfg.RootCAs.AppendCertsFromPEM(ca)
 
-	cert, err := tls.LoadX509KeyPair(os.Getenv("CLIENT_CERT"),
-		os.Getenv("CLIENT_KEY"))
+	cert, err := tls.LoadX509KeyPair(
+		os.Getenv("CLIENT_CERT"),
+		os.Getenv("CLIENT_KEY"),
+	)
 	cfg.Certificates = append(cfg.Certificates, cert)
 	if err != nil {
 		log.Fatalln(err)
@@ -283,7 +301,8 @@ func sendToRabbit(ch *amqp.Channel, channel string, body string) error {
 		return err
 	}
 
-	err = ch.PublishWithContext(ctx,
+	err = ch.PublishWithContext(
+		ctx,
 		"",     // exchange
 		q.Name, // routing key
 		false,  // mandatory
@@ -291,7 +310,8 @@ func sendToRabbit(ch *amqp.Channel, channel string, body string) error {
 		amqp.Publishing{
 			ContentType: "text/plain",
 			Body:        []byte(body),
-		})
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -300,13 +320,15 @@ func sendToRabbit(ch *amqp.Channel, channel string, body string) error {
 }
 
 func logSetup() {
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp: true,
-		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
-			filename := path.Base(f.File)
-			return fmt.Sprintf("%s()", f.Function), fmt.Sprintf(" %s:%d", filename, f.Line)
+	log.SetFormatter(
+		&log.TextFormatter{
+			FullTimestamp: true,
+			CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+				filename := path.Base(f.File)
+				return fmt.Sprintf("%s()", f.Function), fmt.Sprintf(" %s:%d", filename, f.Line)
+			},
 		},
-	})
+	)
 	if l, err := log.ParseLevel("debug"); err == nil {
 		log.SetLevel(l)
 		log.SetReportCaller(l == log.DebugLevel)

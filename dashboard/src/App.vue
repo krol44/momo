@@ -261,7 +261,7 @@ export default {
 					window.localStorage.setItem('is-auth', 'no')
 				} else {
 					// if used domain and without port so can set HttpOnly=true;
-					document.cookie = 'token=' + jp.data + '; path=/; SameSite=Strict; Secure=true;' +
+					document.cookie = 'token=' + jp.data + '; path=/; ' +
 						'expires=' + new Date(new Date().getTime() + 365 * 24 * 3600 * 1000).toUTCString()
 
 					window.localStorage.setItem('is-auth', 'yes')

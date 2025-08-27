@@ -1,0 +1,913 @@
+{
+	"annotations": {
+		"list": [
+			{
+				"builtIn": 1,
+				"datasource": {
+					"type": "datasource",
+					"uid": "grafana"
+				},
+				"enable": true,
+				"hide": true,
+				"iconColor": "rgba(0, 211, 255, 1)",
+				"name": "Annotations & Alerts",
+				"type": "dashboard"
+			}
+		]
+	},
+	"description": "https://github.com/krol44/momo - more info",
+	"editable": true,
+	"fiscalYearStartMonth": 0,
+	"gnetId": 14282,
+	"graphTooltip": 0,
+	"id": 26,
+	"links": [],
+	"panels": [
+		{
+			"collapsed": false,
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"gridPos": {
+				"h": 1,
+				"w": 24,
+				"x": 0,
+				"y": 0
+			},
+			"id": 8,
+			"panels": [],
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"refId": "A"
+				}
+			],
+			"title": "CPU",
+			"type": "row"
+		},
+		{
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "palette-classic"
+					},
+					"custom": {
+						"axisBorderShow": false,
+						"axisCenteredZero": false,
+						"axisColorMode": "text",
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"legend": false,
+							"tooltip": false,
+							"viz": false
+						},
+						"insertNulls": false,
+						"lineInterpolation": "smooth",
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": false,
+						"stacking": {
+							"group": "A",
+							"mode": "normal"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "red",
+								"value": 80
+							}
+						]
+					},
+					"unit": "percent"
+				},
+				"overrides": []
+			},
+			"gridPos": {
+				"h": 7,
+				"w": 24,
+				"x": 0,
+				"y": 1
+			},
+			"id": 15,
+			"options": {
+				"legend": {
+					"calcs": [
+						"mean",
+						"max",
+						"lastNotNull"
+					],
+					"displayMode": "table",
+					"placement": "right",
+					"showLegend": true,
+					"sortBy": "Max",
+					"sortDesc": true
+				},
+				"tooltip": {
+					"mode": "multi",
+					"sort": "desc"
+				}
+			},
+			"pluginVersion": "7.4.5",
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"editorMode": "code",
+					"expr": "sum(rate(momo_container_cpu_usage_seconds_total{server=~\"$server\",name=~\"$container\",name=~\".+\"}[5m])) by (server, name) *100",
+					"hide": false,
+					"interval": "",
+					"legendFormat": "{{name}} – {{server}}",
+					"range": true,
+					"refId": "A"
+				}
+			],
+			"title": "CPU Usage",
+			"type": "timeseries"
+		},
+		{
+			"collapsed": true,
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"gridPos": {
+				"h": 1,
+				"w": 24,
+				"x": 0,
+				"y": 8
+			},
+			"id": 11,
+			"panels": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"fieldConfig": {
+						"defaults": {
+							"color": {
+								"mode": "palette-classic"
+							},
+							"custom": {
+								"axisBorderShow": false,
+								"axisCenteredZero": false,
+								"axisColorMode": "text",
+								"axisLabel": "",
+								"axisPlacement": "auto",
+								"barAlignment": 0,
+								"drawStyle": "line",
+								"fillOpacity": 10,
+								"gradientMode": "none",
+								"hideFrom": {
+									"legend": false,
+									"tooltip": false,
+									"viz": false
+								},
+								"insertNulls": false,
+								"lineInterpolation": "smooth",
+								"lineWidth": 1,
+								"pointSize": 5,
+								"scaleDistribution": {
+									"type": "linear"
+								},
+								"showPoints": "never",
+								"spanNulls": false,
+								"stacking": {
+									"group": "A",
+									"mode": "normal"
+								},
+								"thresholdsStyle": {
+									"mode": "off"
+								}
+							},
+							"mappings": [],
+							"thresholds": {
+								"mode": "absolute",
+								"steps": [
+									{
+										"color": "green",
+										"value": null
+									},
+									{
+										"color": "red",
+										"value": 80
+									}
+								]
+							},
+							"unit": "bytes"
+						},
+						"overrides": []
+					},
+					"gridPos": {
+						"h": 7,
+						"w": 24,
+						"x": 0,
+						"y": 9
+					},
+					"id": 9,
+					"options": {
+						"legend": {
+							"calcs": [
+								"mean",
+								"max",
+								"lastNotNull"
+							],
+							"displayMode": "table",
+							"placement": "right",
+							"showLegend": true,
+							"sortBy": "Max",
+							"sortDesc": true
+						},
+						"tooltip": {
+							"mode": "multi",
+							"sort": "desc"
+						}
+					},
+					"pluginVersion": "7.4.5",
+					"targets": [
+						{
+							"datasource": {
+								"type": "prometheus",
+								"uid": "aew0f8kql7tvka"
+							},
+							"editorMode": "code",
+							"expr": "sum(momo_container_memory_rss{server=~\"$server\",name=~\"$container\",name=~\".+\"}) by (server, name)",
+							"hide": false,
+							"interval": "",
+							"legendFormat": "{{name}} – {{server}}",
+							"range": true,
+							"refId": "A"
+						}
+					],
+					"title": "Memory Usage",
+					"type": "timeseries"
+				},
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"fieldConfig": {
+						"defaults": {
+							"color": {
+								"mode": "palette-classic"
+							},
+							"custom": {
+								"axisBorderShow": false,
+								"axisCenteredZero": false,
+								"axisColorMode": "text",
+								"axisLabel": "",
+								"axisPlacement": "auto",
+								"barAlignment": 0,
+								"drawStyle": "line",
+								"fillOpacity": 10,
+								"gradientMode": "none",
+								"hideFrom": {
+									"legend": false,
+									"tooltip": false,
+									"viz": false
+								},
+								"insertNulls": false,
+								"lineInterpolation": "smooth",
+								"lineWidth": 1,
+								"pointSize": 5,
+								"scaleDistribution": {
+									"type": "linear"
+								},
+								"showPoints": "never",
+								"spanNulls": false,
+								"stacking": {
+									"group": "A",
+									"mode": "normal"
+								},
+								"thresholdsStyle": {
+									"mode": "off"
+								}
+							},
+							"mappings": [],
+							"thresholds": {
+								"mode": "absolute",
+								"steps": [
+									{
+										"color": "green",
+										"value": null
+									},
+									{
+										"color": "red",
+										"value": 80
+									}
+								]
+							},
+							"unit": "bytes"
+						},
+						"overrides": []
+					},
+					"gridPos": {
+						"h": 8,
+						"w": 24,
+						"x": 0,
+						"y": 16
+					},
+					"id": 14,
+					"options": {
+						"legend": {
+							"calcs": [
+								"mean",
+								"max",
+								"lastNotNull"
+							],
+							"displayMode": "table",
+							"placement": "right",
+							"showLegend": true,
+							"sortBy": "Mean",
+							"sortDesc": true
+						},
+						"tooltip": {
+							"mode": "multi",
+							"sort": "desc"
+						}
+					},
+					"pluginVersion": "7.4.5",
+					"targets": [
+						{
+							"datasource": {
+								"type": "prometheus",
+								"uid": "aew0f8kql7tvka"
+							},
+							"editorMode": "code",
+							"expr": "sum(momo_container_memory_cache{server=~\"$server\",name=~\"$container\",name=~\".+\"}) by (server, name)",
+							"hide": false,
+							"interval": "",
+							"legendFormat": "{{name}} – {{server}}",
+							"range": true,
+							"refId": "A"
+						}
+					],
+					"title": "Memory Cached",
+					"type": "timeseries"
+				}
+			],
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"refId": "A"
+				}
+			],
+			"title": "Memory",
+			"type": "row"
+		},
+		{
+			"collapsed": false,
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"gridPos": {
+				"h": 1,
+				"w": 24,
+				"x": 0,
+				"y": 9
+			},
+			"id": 2,
+			"panels": [],
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"refId": "A"
+				}
+			],
+			"title": "Network / Block",
+			"type": "row"
+		},
+		{
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "palette-classic"
+					},
+					"custom": {
+						"axisBorderShow": false,
+						"axisCenteredZero": true,
+						"axisColorMode": "text",
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"legend": false,
+							"tooltip": false,
+							"viz": false
+						},
+						"insertNulls": false,
+						"lineInterpolation": "smooth",
+						"lineStyle": {
+							"fill": "solid"
+						},
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": false,
+						"stacking": {
+							"group": "A",
+							"mode": "normal"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"fieldMinMax": false,
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "red",
+								"value": 80
+							}
+						]
+					},
+					"unit": "Bps"
+				},
+				"overrides": []
+			},
+			"gridPos": {
+				"h": 8,
+				"w": 24,
+				"x": 0,
+				"y": 10
+			},
+			"id": 6,
+			"options": {
+				"legend": {
+					"calcs": [
+						"mean",
+						"max",
+						"lastNotNull"
+					],
+					"displayMode": "table",
+					"placement": "right",
+					"showLegend": true,
+					"sortBy": "Last *",
+					"sortDesc": true
+				},
+				"tooltip": {
+					"mode": "multi",
+					"sort": "desc"
+				}
+			},
+			"pluginVersion": "7.4.5",
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"editorMode": "code",
+					"exemplar": false,
+					"expr": "sum(rate(momo_container_network_transmit_bytes_total{server=~\"$server\",name=~\"$container\",name=~\".+\"}[5m])) by (server, name)",
+					"interval": "",
+					"legendFormat": "{{name}} – {{server}} (tx)",
+					"range": true,
+					"refId": "A"
+				},
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"editorMode": "code",
+					"expr": "sum(rate(momo_container_network_receive_bytes_total{server=~\"$server\",name=~\"$container\",name=~\".+\"}[5m])) by (server, name) * -1",
+					"hide": false,
+					"instant": false,
+					"legendFormat": "{{name}} – {{server}} (rx)",
+					"range": true,
+					"refId": "B"
+				}
+			],
+			"title": "Sent/Receive Network Traffic",
+			"type": "timeseries"
+		},
+		{
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "continuous-RdYlGr"
+					},
+					"custom": {
+						"axisBorderShow": false,
+						"axisCenteredZero": true,
+						"axisColorMode": "text",
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"legend": false,
+							"tooltip": false,
+							"viz": false
+						},
+						"insertNulls": false,
+						"lineInterpolation": "smooth",
+						"lineStyle": {
+							"fill": "solid"
+						},
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": false,
+						"stacking": {
+							"group": "A",
+							"mode": "none"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"fieldMinMax": false,
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "red",
+								"value": 80
+							}
+						]
+					},
+					"unit": "Bps"
+				},
+				"overrides": []
+			},
+			"gridPos": {
+				"h": 8,
+				"w": 24,
+				"x": 0,
+				"y": 18
+			},
+			"id": 20,
+			"options": {
+				"legend": {
+					"calcs": [
+						"mean",
+						"max",
+						"lastNotNull"
+					],
+					"displayMode": "table",
+					"placement": "right",
+					"showLegend": true,
+					"sortBy": "Last *",
+					"sortDesc": false
+				},
+				"tooltip": {
+					"mode": "multi",
+					"sort": "desc"
+				}
+			},
+			"pluginVersion": "7.4.5",
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"editorMode": "code",
+					"exemplar": false,
+					"expr": "sum(rate(momo_container_blkio_bytes_total{op=\"write\",server=~\"$server\",name=~\"$container\"}[5m])) by (server, name)",
+					"hide": false,
+					"instant": false,
+					"interval": "",
+					"legendFormat": "{{name}} – {{server}} (write)",
+					"range": true,
+					"refId": "A"
+				},
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"editorMode": "code",
+					"expr": "sum(rate(momo_container_blkio_bytes_total{op=\"read\",server=~\"$server\",name=~\"$container\"}[5m])) by (server, name) * -1\n",
+					"hide": false,
+					"instant": false,
+					"legendFormat": "{{name}} – {{server}} (read)",
+					"range": true,
+					"refId": "B"
+				}
+			],
+			"title": "Block I/O",
+			"type": "timeseries"
+		},
+		{
+			"collapsed": false,
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"gridPos": {
+				"h": 1,
+				"w": 24,
+				"x": 0,
+				"y": 26
+			},
+			"id": 19,
+			"panels": [],
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"refId": "A"
+				}
+			],
+			"title": "Misc",
+			"type": "row"
+		},
+		{
+			"datasource": {
+				"type": "prometheus",
+				"uid": "aew0f8kql7tvka"
+			},
+			"fieldConfig": {
+				"defaults": {
+					"custom": {
+						"align": "auto",
+						"cellOptions": {
+							"type": "auto"
+						},
+						"filterable": false,
+						"inspect": false
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "red",
+								"value": 80
+							}
+						]
+					}
+				},
+				"overrides": []
+			},
+			"gridPos": {
+				"h": 24,
+				"w": 24,
+				"x": 0,
+				"y": 27
+			},
+			"id": 17,
+			"options": {
+				"cellHeight": "sm",
+				"footer": {
+					"countRows": false,
+					"fields": "",
+					"reducer": [
+						"sum"
+					],
+					"show": false
+				},
+				"showHeader": true,
+				"sortBy": [
+					{
+						"desc": true,
+						"displayName": "Sent/Receive traffic"
+					}
+				]
+			},
+			"pluginVersion": "11.1.0",
+			"targets": [
+				{
+					"datasource": {
+						"type": "prometheus",
+						"uid": "aew0f8kql7tvka"
+					},
+					"editorMode": "code",
+					"exemplar": false,
+					"expr": "momo_container_info{server=~\"$server\",name=~\"$container\"}",
+					"format": "table",
+					"instant": true,
+					"interval": "",
+					"legendFormat": "{{name}}",
+					"range": false,
+					"refId": "A"
+				}
+			],
+			"title": "Containers Info",
+			"transformations": [
+				{
+					"id": "filterFieldsByName",
+					"options": {
+						"byVariable": false,
+						"include": {
+							"names": [
+								"d",
+								"image",
+								"instance",
+								"name",
+								"net",
+								"network_type",
+								"server",
+								"uptime"
+							]
+						}
+					}
+				},
+				{
+					"id": "organize",
+					"options": {
+						"excludeByName": {
+							"Value": false
+						},
+						"includeByName": {},
+						"indexByName": {
+							"d": 5,
+							"image": 8,
+							"instance": 0,
+							"name": 2,
+							"net": 4,
+							"network_type": 7,
+							"server": 1,
+							"state": 6,
+							"uptime": 3
+						},
+						"renameByName": {
+							"Value": "",
+							"container_label_com_docker_compose_project": "Label",
+							"container_label_com_docker_compose_project_working_dir": "Working dir",
+							"container_label_com_docker_compose_service": "Service",
+							"d": "Block I/O",
+							"image": "Registry Image",
+							"instance": "Instance",
+							"name": "Name",
+							"net": "Sent/Receive traffic",
+							"network_type": "Network type",
+							"server": "Server",
+							"state": "State",
+							"uptime": "Uptime"
+						}
+					}
+				}
+			],
+			"type": "table"
+		}
+	],
+	"refresh": "30s",
+	"schemaVersion": 39,
+	"tags": [
+		"docker"
+	],
+	"templating": {
+		"list": [
+			{
+				"allValue": ".*",
+				"current": {
+					"selected": true,
+					"text": [
+						"All"
+					],
+					"value": [
+						"$__all"
+					]
+				},
+				"datasource": {
+					"type": "prometheus",
+					"uid": "aew0f8kql7tvka"
+				},
+				"definition": "label_values({__name__=~\"momo_container.*\"},server)",
+				"hide": 0,
+				"includeAll": true,
+				"label": "Server",
+				"multi": true,
+				"name": "server",
+				"options": [],
+				"query": {
+					"qryType": 1,
+					"query": "label_values({__name__=~\"momo_container.*\"},server)",
+					"refId": "PrometheusVariableQueryEditor-VariableQuery"
+				},
+				"refresh": 1,
+				"regex": "",
+				"skipUrlSync": false,
+				"sort": 5,
+				"type": "query"
+			},
+			{
+				"allValue": ".*",
+				"current": {
+					"selected": true,
+					"text": [
+						"momo-dashboard-api-1",
+						"momo-grabber",
+						"momo-rabbitMQ-1"
+					],
+					"value": [
+						"momo-dashboard-api-1",
+						"momo-grabber",
+						"momo-rabbitMQ-1"
+					]
+				},
+				"datasource": {
+					"type": "prometheus",
+					"uid": "aew0f8kql7tvka"
+				},
+				"definition": "label_values({__name__=~\"momo_container.*\", server=~\"$server\"},name)",
+				"hide": 0,
+				"includeAll": true,
+				"label": "Container",
+				"multi": true,
+				"name": "container",
+				"options": [],
+				"query": {
+					"qryType": 1,
+					"query": "label_values({__name__=~\"momo_container.*\", server=~\"$server\"},name)",
+					"refId": "PrometheusVariableQueryEditor-VariableQuery"
+				},
+				"refresh": 1,
+				"regex": "",
+				"skipUrlSync": false,
+				"sort": 0,
+				"tagValuesQuery": "",
+				"tagsQuery": "",
+				"type": "query",
+				"useTags": false
+			}
+		]
+	},
+	"time": {
+		"from": "now-1h",
+		"to": "now"
+	},
+	"timepicker": {},
+	"timezone": "",
+	"title": "Momo Dockers",
+	"uid": "eew7qfn8rec5ce",
+	"version": 30,
+	"weekStart": ""
+}
