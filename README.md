@@ -3,7 +3,7 @@
 2. Stats of the containers
 3. Notification error or info messages to the telegram bot
 4. Export statistics to prometheus
-5. Ready-made template for graphana
+5. Ready-made template for grafana
 
 # demo screen
 ![demo momo](https://github.com/krol44/momo/raw/master/readme/demo-screen.png?raw=true)
