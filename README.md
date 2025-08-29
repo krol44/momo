@@ -32,7 +32,7 @@ TG_BOT_TOKEN=0000000:AAAAAAAAAAAAAAAA
 6. `./docker-start.sh` – creating ssl cert
 7. `cd ../../`
 8. `./build`
-9. open url `https://localhost:8844` to login, you may copy link in the setting page and install own machine
+9. open url `http://localhost:8844` to login, you may copy link in the setting page and install own machine
 10. enjoy :3
-11. https://localhost:8777/metrics – add to prometheus
+11. http://localhost:8777/metrics – add to prometheus
 12. Import your grafana json model – readme/grafana-model.json
