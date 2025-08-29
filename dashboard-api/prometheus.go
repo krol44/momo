@@ -44,7 +44,7 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = fmt.Fprintf(w, "# TYPE %sblkio_bytes_total counter\n", prefix)
 
 	_, _ = fmt.Fprintf(w, "# HELP %sinfo More information about containers.\n", prefix)
-	_, _ = fmt.Fprintf(w, "# TYPE %sinfo counter\n", prefix)
+	_, _ = fmt.Fprintf(w, "# TYPE %sinfo gauge\n", prefix)
 
 	metrics.Lock()
 	defer metrics.Unlock()
@@ -111,15 +111,20 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request) {
 		}
 
 		// Disk I/O
+		totalRead := 0
+		totalWrite := 0
 		for _, io := range j.BlkioStats.IoServiceBytesRecursive {
-			op := io.Op
-			val := io.Value
-
-			_, _ = fmt.Fprintf(w, "%sblkio_bytes_total{%s,op=%q} %d\n", prefix, labels, op, val)
+			if io.Op == "read" {
+				totalRead += io.Value
+			} else if io.Op == "write" {
+				totalWrite += io.Value
+			}
 		}
+		_, _ = fmt.Fprintf(w, "%sblkio_bytes_total{%s,op=\"read\"} %d\n", prefix, labels, totalRead)
+		_, _ = fmt.Fprintf(w, "%sblkio_bytes_total{%s,op=\"write\"} %d\n", prefix, labels, totalWrite)
 
 		// Info
-		_, _ = fmt.Fprintf(w, "%sinfo{%s} %d\n", prefix, labelsFull, tx)
+		_, _ = fmt.Fprintf(w, "%sinfo{%s} 1\n", prefix, labelsFull)
 	}
 }
 
